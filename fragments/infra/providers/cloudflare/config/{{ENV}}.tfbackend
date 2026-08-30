@@ -1,0 +1,13 @@
+bucket = "{{STATE_BUCKET}}"
+key    = "{{ENV}}/{{PROJECT}}/terraform.tfstate"
+region = "auto"
+
+endpoints = { s3 = "https://{{CLOUDFLARE_ACCOUNT_ID}}.r2.cloudflarestorage.com" }
+
+# R2 is S3-shaped, not S3. Each flag disables an AWS-only check.
+skip_credentials_validation = true
+skip_metadata_api_check     = true
+skip_region_validation      = true
+skip_requesting_account_id  = true
+skip_s3_checksum            = true
+use_path_style              = true

@@ -1,20 +1,15 @@
 name: Deploy (prd)
 
-# Dispatched by 3-deploy-preprod after a green preprod deploy. Also accepts a
-# tag push, and a manual dispatch for redeploy or rollback.
+# Run this against a vX.Y.Z tag. Dispatch it from the tag ref; the validate step
+# rejects anything else, so a branch never reaches prd.
 
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Production tag to deploy (e.g. v1.2.0)"
-        required: true
-        type: string
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
-run-name: Deploy ${{ inputs.tag || github.ref_name }} to prd
+run-name: Deploy ${{ github.ref_name }} to prd
 
 concurrency:
   group: deploy-prd
@@ -29,12 +24,16 @@ jobs:
     name: 🚀 Deploy to prd
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      id-token: write
+
     environment:
-      name: prd
+      name: "{{PRD_ENV}}"
       url: "{{PRD_URL}}"
 
     env:
-      TAG: ${{ inputs.tag || github.ref_name }}
+      TAG: ${{ github.ref_name }}
 
     steps:
       - name: ✅ Validate Tag
@@ -48,16 +47,14 @@ jobs:
 
       - name: 📥 Checkout
         uses: actions/checkout@v4
-        with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - name: 🔧 Setup
         uses: ./.github/actions/setup
 
 # >>> infra
-      - name: ☁️ Infra
-        run: make infra ENV=prd
 # <<< infra
 
+# >>> deploy
       - name: 🚀 Deploy
         run: make deploy ENV=prd
+# <<< deploy

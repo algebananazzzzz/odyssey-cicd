@@ -1,4 +1,4 @@
-# intranet-web — task runner.
+# intranet-web task runner.
 #
 # CI calls these targets and nothing else. Every workflow step is `make <target>`,
 # so this file is the whole contract between the repo and its pipeline. Change a
@@ -20,7 +20,7 @@ help: ## List targets
 
 ci: check test build ## Mirror CI locally
 
-# --- node ---
+# --- nextjs ---
 
 setup: ## Install dependencies
 	npm ci --prefer-offline --no-audit --no-fund
@@ -36,6 +36,7 @@ test: ## Unit + component tests
 build: ## Build artifact
 	npm run build
 
+
 # --- deploy: cloudflare worker (opennext) ---
 # prd uses the top-level wrangler config; other envs pass --env.
 
@@ -46,18 +47,28 @@ deploy: ## Deploy to ENV
 	npx opennextjs-cloudflare deploy $(ENVF)
 
 # --- infra: terraform ---
-# Per-env config lives in infra/config/$(ENV).tfbackend and $(ENV).tfvars.
-# Credentials come from the environment, never from a committed file.
 
 TF := terraform -chdir=infra
 
-.PHONY: infra infra-plan
+ifneq (,$(wildcard infra/.env))
+include infra/.env
+export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' infra/.env)
+endif
 
-infra-plan: ## Plan infrastructure for ENV
-	$(TF) init -reconfigure -backend-config=config/$(ENV).tfbackend
-	$(TF) plan -var-file=config/$(ENV).tfvars
+.PHONY: infra infra-plan infra-check infra-init
 
-infra: ## Apply infrastructure for ENV
-	$(TF) init -reconfigure -backend-config=config/$(ENV).tfbackend
-	$(TF) apply -var-file=config/$(ENV).tfvars -auto-approve
+# -reconfigure: the backend key changes with ENV, and without it Terraform
+# offers to migrate the previous env's state into the new key.
+infra-init:
+	$(TF) init -reconfigure -input=false -backend-config=config/$(ENV).tfbackend
 
+infra-check: ## Check formatting + validate terraform; no backend, no credentials
+	$(TF) fmt -check -recursive
+	$(TF) init -backend=false -input=false >/dev/null
+	$(TF) validate
+
+infra-plan: infra-init ## Show pending infra changes for ENV
+	$(TF) plan -input=false -var-file=config/$(ENV).tfvars
+
+infra: infra-init ## Apply infra for ENV
+	$(TF) apply -input=false -auto-approve -var-file=config/$(ENV).tfvars

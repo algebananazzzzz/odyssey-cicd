@@ -13,13 +13,8 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Existing tag to deploy (e.g. v1.2.0)"
-        required: true
-        type: string
 
-run-name: Deploy ${{ inputs.tag || 'main' }} to prd
+run-name: Deploy ${{ needs.tag.outputs.tag || github.ref_name }} to prd
 
 concurrency:
   group: deploy-prd
@@ -49,59 +44,21 @@ jobs:
       - name: 🔢 Compute Next Tag
         id: bump
         env:
-          # Via env, never ${{ }} inside the script. A fork PR title reaches
-          # this message and interpolation splices it in as shell source.
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          # Via env, never ${{ }} inside the run block. These strings are
+          # attacker-controlled on a fork's pull request, and interpolation
+          # splices them into the step as shell source.
+          TITLE: ${{ github.event.head_commit.message }}
+          BODY: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          git fetch --tags --force
-          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
-
-          subject="${COMMIT_MSG%%$'\n'*}"
-
-          if   [[ "$subject" == *'!:'* || "$COMMIT_MSG" == *'BREAKING CHANGE'* ]]; then
-            bump=major
-          elif [[ "$subject" =~ ^feat(\(.+\))?: ]]; then
-            bump=minor
-          else
-            bump=patch
-          fi
-
-          if [ -z "$latest" ]; then
-            next="v0.1.0"
-          else
-            core="${latest#v}"
-            if [[ ! "$core" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::Latest tag '$latest' is not vX.Y.Z."
-              exit 1
-            fi
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
-
-            case "$bump" in
-              major) next="v$((MAJOR + 1)).0.0" ;;
-              minor) next="v${MAJOR}.$((MINOR + 1)).0" ;;
-              patch) next="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
-            esac
-          fi
-
-          if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
-            echo "::error::$next already exists."
-            exit 1
-          fi
-
-          echo "subject:  $subject"
-          echo "bump:     $bump"
-          echo "previous: ${latest:-<none>}"
-          echo "next:     $next"
-          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          tag="$(.github/scripts/semver-tag.sh)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: 🏷️ Push Tag
         env:
           NEW_TAG: ${{ steps.bump.outputs.tag }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "$NEW_TAG" "$GITHUB_SHA"
           git push origin "$NEW_TAG"
 
@@ -115,23 +72,27 @@ jobs:
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'push' && needs.tag.result == 'success'))
 
+    permissions:
+      contents: read
+      id-token: write
+
     environment:
-      name: prd
+      name: "{{PRD_ENV}}"
       url: "{{PRD_URL}}"
 
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ needs.tag.outputs.tag || inputs.tag }}
+          ref: refs/tags/${{ needs.tag.outputs.tag || github.ref_name }}
 
       - name: 🔧 Setup
         uses: ./.github/actions/setup
 
 # >>> infra
-      - name: ☁️ Infra
-        run: make infra ENV=prd
 # <<< infra
 
+# >>> deploy
       - name: 🚀 Deploy
         run: make deploy ENV=prd
+# <<< deploy

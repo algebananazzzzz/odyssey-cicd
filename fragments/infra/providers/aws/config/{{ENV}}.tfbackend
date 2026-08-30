@@ -1,0 +1,6 @@
+bucket = "{{STATE_BUCKET}}"
+key    = "{{ENV}}/{{PROJECT}}/terraform.tfstate"
+region = "{{AWS_REGION}}"
+
+encrypt      = true
+use_lockfile = true

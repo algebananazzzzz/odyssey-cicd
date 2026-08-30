@@ -1,0 +1,24 @@
+{
+  "family": "INJECTED",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "INJECTED",
+  "taskRoleArn": "INJECTED",
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "INJECTED",
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "INJECTED",
+          "awslogs-region": "INJECTED",
+          "awslogs-stream-prefix": "INJECTED"
+        }
+      }
+    }
+  ]
+}

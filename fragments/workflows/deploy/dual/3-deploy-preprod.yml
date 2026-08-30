@@ -1,7 +1,7 @@
 name: Deploy (preprod)
 
 # Merge to main cuts vX.Y.Z-beta and deploys it. A green deploy strips the
-# suffix to vX.Y.Z and ships that to prd.
+# suffix to vX.Y.Z, which marks the build eligible for prd.
 #
 # Bump level comes from the squashed PR title:
 #   feat!: / fix!: / BREAKING CHANGE in body   major
@@ -45,53 +45,16 @@ jobs:
       - name: 🔢 Compute Next Tag
         id: bump
         env:
-          # Via env, never ${{ }} inside the script. A fork PR title is
-          # attacker-controlled and interpolation splices it in as shell source.
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+          # Via env, never ${{ }} inside the run block. These strings are
+          # attacker-controlled on a fork's pull request, and interpolation
+          # splices them into the step as shell source.
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          SUFFIX: "-beta"
         run: |
           set -euo pipefail
-          git fetch --tags --force
-
-          # Glob one suffix only. -v:refname mis-orders mixed pre-release and
-          # final tags unless versionsort.suffix is configured.
-          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*-beta' --sort=-v:refname | head -n1)"
-
-          if   [[ "$PR_TITLE" == *'!:'* || "$PR_BODY" == *'BREAKING CHANGE'* ]]; then
-            bump=major
-          elif [[ "$PR_TITLE" =~ ^feat(\(.+\))?: ]]; then
-            bump=minor
-          else
-            bump=patch
-          fi
-
-          if [ -z "$latest" ]; then
-            next="v0.1.0-beta"
-          else
-            core="${latest#v}"; core="${core%-beta}"
-            if [[ ! "$core" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::Latest pre-release tag '$latest' is not vX.Y.Z-beta."
-              exit 1
-            fi
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
-
-            case "$bump" in
-              major) next="v$((MAJOR + 1)).0.0-beta" ;;
-              minor) next="v${MAJOR}.$((MINOR + 1)).0-beta" ;;
-              patch) next="v${MAJOR}.${MINOR}.$((PATCH + 1))-beta" ;;
-            esac
-          fi
-
-          if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
-            echo "::error::$next already exists. A previous release likely failed after tagging."
-            exit 1
-          fi
-
-          echo "title:    $PR_TITLE"
-          echo "bump:     $bump"
-          echo "previous: ${latest:-<none>}"
-          echo "next:     $next"
-          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          tag="$(.github/scripts/semver-tag.sh)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: 🏷️ Push Tag
         env:
@@ -99,8 +62,6 @@ jobs:
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "$NEW_TAG" "$MERGE_SHA"
           git push origin "$NEW_TAG"
 
@@ -114,8 +75,12 @@ jobs:
       (github.event_name == 'push' ||
        (github.event_name == 'pull_request' && needs.tag.result == 'success'))
 
+    permissions:
+      contents: read
+      id-token: write
+
     environment:
-      name: preprod
+      name: "{{PREPROD_ENV}}"
       url: "{{PREPROD_URL}}"
 
     steps:
@@ -128,12 +93,12 @@ jobs:
         uses: ./.github/actions/setup
 
 # >>> infra
-      - name: ☁️ Infra
-        run: make infra ENV=preprod
 # <<< infra
 
+# >>> deploy
       - name: 🚀 Deploy
         run: make deploy ENV=preprod
+# <<< deploy
 
   promote:
     name: ⬆️ Promote to prd
@@ -142,7 +107,6 @@ jobs:
     if: ${{ !cancelled() && needs.deploy.result == 'success' }}
     permissions:
       contents: write
-      actions: write
 
     steps:
       - name: 📥 Checkout
@@ -152,37 +116,6 @@ jobs:
           fetch-tags: true
 
       - name: 🏷️ Cut Production Tag
-        id: cut
         env:
-          BETA_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-          git fetch --tags --force
-
-          case "$BETA_TAG" in
-            v*.*.*-beta) ;;
-            *) echo "::error::'$BETA_TAG' is not a vX.Y.Z-beta tag."; exit 1 ;;
-          esac
-
-          PRD_TAG="${BETA_TAG%-beta}"
-          echo "tag=$PRD_TAG" >> "$GITHUB_OUTPUT"
-
-          if git rev-parse -q --verify "refs/tags/$PRD_TAG" >/dev/null; then
-            echo "::notice::$PRD_TAG already exists, reusing it."
-            exit 0
-          fi
-
-          # Tag the commit preprod deployed, not whatever main points at now.
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$PRD_TAG" "${BETA_TAG}^{commit}"
-          git push origin "$PRD_TAG"
-
-      - name: 🚢 Ship to prd
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRD_TAG: ${{ steps.cut.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # A ref pushed with GITHUB_TOKEN does not start a run. Dispatch does.
-          gh workflow run 4-deploy-prd.yml --ref "$PRD_TAG" -f tag="$PRD_TAG"
+          TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
+        run: .github/scripts/promote-tag.sh

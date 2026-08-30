@@ -1,0 +1,13 @@
+      - name: 🔑 Authenticate
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: {{AWS_REGION}}
+
+      - name: 🏗️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: ☁️ Infra
+        run: make infra ENV={{ENV}}
