@@ -16,6 +16,11 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@v4
 
+      - name: 🔧 Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - name: 🏗️ Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -32,5 +37,5 @@ jobs:
           TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: |
           mkdir -p ~/.terraform.d/plugin-cache
-          pip install pyyaml
-          python3 tools/validate.py
+          go vet ./...
+          go run ./cmd/odyssey-cli validate
