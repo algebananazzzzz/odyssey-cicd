@@ -1,18 +1,12 @@
-# .github/workflows/3-deploy.yml
-name: 3. Deploy (prd)
+name: Deploy (prd)
 
-# Trigger — two paths:
-#   1. Push to main. Cuts the next vX.Y.Z tag and deploys it. The bump level
-#      comes from the squash-merge commit subject, Conventional Commits style:
-#        feat!: / fix!: / BREAKING CHANGE in body  -> major   1.4.7 -> 2.0.0
-#        feat: / feat(scope):                      -> minor   1.4.7 -> 1.5.0
-#        anything else                             -> patch   1.4.7 -> 1.4.8
-#   2. workflow_dispatch with an existing tag — redeploy or roll back.
+# Push to main cuts vX.Y.Z and deploys it. Dispatch an existing tag to redeploy
+# or roll back.
 #
-# Single-environment shape: same 1-ci-branch / 2-ci-merge gates as the dual
-# shape, but no promotion ladder — the tag is cut and shipped in one run. The
-# deploy still checks out the tag rather than the branch, so what ships always
-# matches a named commit and a rollback target exists.
+# Bump level comes from the squash-merge commit subject:
+#   feat!: / fix!: / BREAKING CHANGE in body   major
+#   feat: / feat(scope):                       minor
+#   anything else                              patch
 
 on:
   push:
@@ -46,20 +40,17 @@ jobs:
       tag: ${{ steps.bump.outputs.tag }}
 
     steps:
-      - name: 1. 📄 Checkout Repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: 2. 🔢 Compute Next Tag
+      - name: 🔢 Compute Next Tag
         id: bump
         env:
-          # Push event, so there is no pull_request payload — the squash-merge
-          # commit message carries the PR title as its first line. Read through
-          # env, never interpolated into the script body: the message is
-          # attacker-controlled on a fork PR and `${{ }}` inside a run block
-          # would splice it in as shell source.
+          # Via env, never ${{ }} inside the script. A fork PR title reaches
+          # this message and interpolation splices it in as shell source.
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
@@ -68,9 +59,6 @@ jobs:
 
           subject="${COMMIT_MSG%%$'\n'*}"
 
-          # Conventional Commits. Order matters: a breaking marker wins over
-          # feat. Anything unrecognised is a patch, so a sloppy title can never
-          # produce a surprise major.
           if   [[ "$subject" == *'!:'* || "$COMMIT_MSG" == *'BREAKING CHANGE'* ]]; then
             bump=major
           elif [[ "$subject" =~ ^feat(\(.+\))?: ]]; then
@@ -83,8 +71,6 @@ jobs:
             next="v0.1.0"
           else
             core="${latest#v}"
-            # The glob's `*` matches dots too, so v1.2.3.4 would reach here and
-            # break the arithmetic below with an opaque error. Reject it.
             if [[ ! "$core" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "::error::Latest tag '$latest' is not vX.Y.Z."
               exit 1
@@ -99,7 +85,7 @@ jobs:
           fi
 
           if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
-            echo "::error::$next already exists — refusing to retag."
+            echo "::error::$next already exists."
             exit 1
           fi
 
@@ -109,7 +95,7 @@ jobs:
           echo "next:     $next"
           echo "tag=$next" >> "$GITHUB_OUTPUT"
 
-      - name: 3. 🏷️ Push Tag
+      - name: 🏷️ Push Tag
         env:
           NEW_TAG: ${{ steps.bump.outputs.tag }}
         run: |
@@ -120,9 +106,10 @@ jobs:
           git push origin "$NEW_TAG"
 
   deploy:
-    name: ⚙️ Deploy to prd
+    name: 🚀 Deploy to prd
     runs-on: ubuntu-latest
     needs: [tag]
+    # `tag` is skipped on the dispatch path, so gate on event instead of needs.
     if: |
       always() &&
       (github.event_name == 'workflow_dispatch' ||
@@ -133,18 +120,18 @@ jobs:
       url: "{{PRD_URL}}"
 
     steps:
-      - name: 1. 📄 Checkout Repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ needs.tag.outputs.tag || inputs.tag }}
 
-      - name: 2. ⚙️ Setup Toolchain
+      - name: 🔧 Setup
         uses: ./.github/actions/setup
 
 # >>> infra
-      - name: 3. ☁️ Provision Infrastructure
+      - name: ☁️ Infra
         run: make infra ENV=prd
 # <<< infra
 
-      - name: 4. 🚀 Deploy
+      - name: 🚀 Deploy
         run: make deploy ENV=prd

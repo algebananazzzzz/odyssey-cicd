@@ -1,14 +1,4 @@
-# .github/workflows/1-ci-branch.yml
-name: 1. CI (branch)
-
-# Trigger: every push to a non-trunk branch, before a PR exists.
-#
-# Purpose: fast feedback. Static checks + unit tests only — the two layers that
-# need no network service and no artifact. `build` and integration are the merge
-# gate's job (2-ci-merge.yml), so a typo does not cost a full build.
-#
-# Runs on ALL non-main branches, not just feat/**. A chore/ or fix/ branch that
-# breaks the formatter should fail here, not at the PR.
+name: CI (branch)
 
 on:
   push:
@@ -21,18 +11,18 @@ concurrency:
 
 jobs:
   verify:
-    name: 🚀 Static + Unit
+    name: 🔍 Static + Unit
     runs-on: ubuntu-latest
 
     steps:
-      - name: 1. 📄 Checkout Repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: 2. ⚙️ Setup Toolchain
+      - name: 🔧 Setup
         uses: ./.github/actions/setup
 
-      - name: 3. 🔍 Static Checks
+      - name: 🔍 Check
         run: make check
 
-      - name: 4. 🧪 Unit Tests
+      - name: 🧪 Test
         run: make test

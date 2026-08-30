@@ -1,18 +1,7 @@
-# .github/workflows/4-deploy-prd.yml
-name: 4. Deploy (prd)
+name: Deploy (prd)
 
-# Trigger — two paths, both landing on the same job:
-#   1. workflow_dispatch with a vX.Y.Z tag. This is how 3-deploy-preprod.yml
-#      auto-ships a build that passed preprod, and how a human redeploys or
-#      rolls back to an older tag.
-#   2. push of a vX.Y.Z tag. Covers a tag pushed from a workstation, which does
-#      start a run (unlike one pushed by GITHUB_TOKEN inside Actions).
-#
-# A vX.Y.Z tag means "this build passed preprod". Pre-release tags (-beta) are
-# rejected:
-# prd ships clean vX.Y.Z only.
-#
-# The job always checks out the tag, never a branch.
+# Dispatched by 3-deploy-preprod after a green preprod deploy. Also accepts a
+# tag push, and a manual dispatch for redeploy or rollback.
 
 on:
   workflow_dispatch:
@@ -37,7 +26,7 @@ defaults:
 
 jobs:
   deploy:
-    name: ⚙️ Deploy to prd
+    name: 🚀 Deploy to prd
     runs-on: ubuntu-latest
 
     environment:
@@ -48,27 +37,27 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
-      - name: 1. ✅ Validate Tag
+      - name: ✅ Validate Tag
         run: |
           set -euo pipefail
           case "$TAG" in
-            v*.*.*-*) echo "::error::'$TAG' is a pre-release tag — prd ships clean vX.Y.Z only."; exit 1 ;;
+            v*.*.*-*) echo "::error::'$TAG' is a pre-release tag. prd ships clean vX.Y.Z only."; exit 1 ;;
             v*.*.*)   ;;
             *)        echo "::error::'$TAG' is not a vX.Y.Z tag."; exit 1 ;;
           esac
 
-      - name: 2. 📄 Checkout Repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
-      - name: 3. ⚙️ Setup Toolchain
+      - name: 🔧 Setup
         uses: ./.github/actions/setup
 
 # >>> infra
-      - name: 4. ☁️ Provision Infrastructure
+      - name: ☁️ Infra
         run: make infra ENV=prd
 # <<< infra
 
-      - name: 5. 🚀 Deploy
+      - name: 🚀 Deploy
         run: make deploy ENV=prd

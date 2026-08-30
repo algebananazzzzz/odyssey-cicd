@@ -1,6 +1,3 @@
-# The ONLY stack-aware file in .github/. Every workflow calls it as step 2, then
-# speaks nothing but `make`. Swapping stacks means swapping this file.
-
 name: Setup Toolchain
 description: Install Go and project dependencies.
 

@@ -1,4 +1,4 @@
-# {{PROJECT}} — task runner.
+# {{PROJECT}} task runner.
 #
 # CI calls these targets and nothing else. Every workflow step is `make <target>`,
 # so this file is the whole contract between the repo and its pipeline. Change a
