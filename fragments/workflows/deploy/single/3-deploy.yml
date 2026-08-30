@@ -2,7 +2,11 @@
 name: 3. Deploy (prd)
 
 # Trigger — two paths:
-#   1. Push to main. Cuts the next vX.Y.Z tag (patch bump) and deploys it.
+#   1. Push to main. Cuts the next vX.Y.Z tag and deploys it. The bump level
+#      comes from the squash-merge commit subject, Conventional Commits style:
+#        feat!: / fix!: / BREAKING CHANGE in body  -> major   1.4.7 -> 2.0.0
+#        feat: / feat(scope):                      -> minor   1.4.7 -> 1.5.0
+#        anything else                             -> patch   1.4.7 -> 1.4.8
 #   2. workflow_dispatch with an existing tag — redeploy or roll back.
 #
 # Single-environment shape: same 1-ci-branch / 2-ci-merge gates as the dual
@@ -50,10 +54,30 @@ jobs:
 
       - name: 2. 🔢 Compute Next Tag
         id: bump
+        env:
+          # Push event, so there is no pull_request payload — the squash-merge
+          # commit message carries the PR title as its first line. Read through
+          # env, never interpolated into the script body: the message is
+          # attacker-controlled on a fork PR and `${{ }}` inside a run block
+          # would splice it in as shell source.
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
           git fetch --tags --force
           latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
+
+          subject="${COMMIT_MSG%%$'\n'*}"
+
+          # Conventional Commits. Order matters: a breaking marker wins over
+          # feat. Anything unrecognised is a patch, so a sloppy title can never
+          # produce a surprise major.
+          if   [[ "$subject" == *'!:'* || "$COMMIT_MSG" == *'BREAKING CHANGE'* ]]; then
+            bump=major
+          elif [[ "$subject" =~ ^feat(\(.+\))?: ]]; then
+            bump=minor
+          else
+            bump=patch
+          fi
 
           if [ -z "$latest" ]; then
             next="v0.1.0"
@@ -66,9 +90,21 @@ jobs:
               exit 1
             fi
             IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
-            next="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+            case "$bump" in
+              major) next="v$((MAJOR + 1)).0.0" ;;
+              minor) next="v${MAJOR}.$((MINOR + 1)).0" ;;
+              patch) next="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            esac
           fi
 
+          if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
+            echo "::error::$next already exists — refusing to retag."
+            exit 1
+          fi
+
+          echo "subject:  $subject"
+          echo "bump:     $bump"
           echo "previous: ${latest:-<none>}"
           echo "next:     $next"
           echo "tag=$next" >> "$GITHUB_OUTPUT"

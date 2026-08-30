@@ -87,6 +87,27 @@ only universal variable. Never add a target purely for CI's benefit.
 A `vX.Y.Z-beta` tag means "merged". A `vX.Y.Z` tag means "passed preprod".
 Deploys always check out the tag, never a branch.
 
+**The bump level comes from the PR title.** You squash-merge, so the title is
+the commit message, and the workflow reads it Conventional Commits style:
+
+| PR title | bump | `v1.4.7-beta` becomes |
+|---|---|---|
+| `feat!: drop the v1 API` | major | `v2.0.0-beta` |
+| `fix!: rename every route` | major | `v2.0.0-beta` |
+| *(body contains `BREAKING CHANGE`)* | major | `v2.0.0-beta` |
+| `feat: add booking` | minor | `v1.5.0-beta` |
+| `feat(cca): allocation preview` | minor | `v1.5.0-beta` |
+| `fix: rounding off by one` | patch | `v1.4.8-beta` |
+| `refactor cca table` | patch | `v1.4.8-beta` |
+
+Unrecognised titles fall through to patch, so a sloppy title can never produce
+a surprise major. The title reaches the script through `env:`, never through
+`${{ }}` interpolation — a fork PR title is attacker-controlled and would
+otherwise be spliced in as shell source.
+
+The `single` shape applies the same rules to the squash-merge commit subject,
+since a push event carries no pull_request payload.
+
 **The GITHUB_TOKEN trap.** A ref pushed with the default `GITHUB_TOKEN` does
 not start a workflow run — `workflow_dispatch` and `repository_dispatch` are
 the only exceptions. So `3-deploy-preprod` pushes the production tag *and*

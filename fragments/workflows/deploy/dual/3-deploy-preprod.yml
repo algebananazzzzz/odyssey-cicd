@@ -3,7 +3,11 @@ name: 3. Deploy (preprod)
 
 # Trigger — exactly two cases:
 #   1. A PR is merged into main.
-#      -> Cut the next vX.Y.Z-beta tag (patch bump off the latest beta), deploy it.
+#      -> Cut the next vX.Y.Z-beta tag and deploy it. The bump level comes from
+#         the squashed PR title, Conventional Commits style:
+#           feat!: / fix!: / BREAKING CHANGE in body  -> major   1.4.7 -> 2.0.0
+#           feat: / feat(scope):                      -> minor   1.4.7 -> 1.5.0
+#           anything else                             -> patch   1.4.7 -> 1.4.8
 #   2. A vX.Y.Z-beta tag is pushed by hand.
 #      -> Deploy that tag. Use this to redeploy, or to cut a minor/major bump
 #         that the automatic patch bump will never produce.
@@ -59,6 +63,12 @@ jobs:
 
       - name: 2. 🔢 Compute Next Pre-release Tag
         id: bump
+        env:
+          # Read through env, never interpolated into the script body. A PR
+          # title is attacker-controlled on a fork PR; `${{ }}` inside a run
+          # block would splice it in as shell source before bash ever sees it.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
           git fetch --tags --force
@@ -67,6 +77,17 @@ jobs:
           # pre-release and final tags unless versionsort.suffix is configured;
           # restricting to one suffix makes the comparison purely numeric.
           latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*-beta' --sort=-v:refname | head -n1)"
+
+          # Conventional Commits, read off the squashed PR title. Order matters:
+          # a breaking marker wins over feat. Anything unrecognised is a patch,
+          # so a sloppy title can never produce a surprise major.
+          if   [[ "$PR_TITLE" == *'!:'* || "$PR_BODY" == *'BREAKING CHANGE'* ]]; then
+            bump=major
+          elif [[ "$PR_TITLE" =~ ^feat(\(.+\))?: ]]; then
+            bump=minor
+          else
+            bump=patch
+          fi
 
           if [ -z "$latest" ]; then
             next="v0.1.0-beta"
@@ -79,9 +100,22 @@ jobs:
               exit 1
             fi
             IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
-            next="v${MAJOR}.${MINOR}.$((PATCH + 1))-beta"
+
+            case "$bump" in
+              major) next="v$((MAJOR + 1)).0.0-beta" ;;
+              minor) next="v${MAJOR}.$((MINOR + 1)).0-beta" ;;
+              patch) next="v${MAJOR}.${MINOR}.$((PATCH + 1))-beta" ;;
+            esac
           fi
 
+          if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
+            echo "::error::$next already exists. A previous release likely failed"
+            echo "::error::after tagging — delete it or push the next tag by hand."
+            exit 1
+          fi
+
+          echo "title:    $PR_TITLE"
+          echo "bump:     $bump"
           echo "previous: ${latest:-<none>}"
           echo "next:     $next"
           echo "tag=$next" >> "$GITHUB_OUTPUT"
