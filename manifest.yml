@@ -1,24 +1,26 @@
-# odyssey manifest — schema_version 1.
-#
-# The layout is the contract; the engine knows what every path means. This file
-# only declares what exists and what fits together. Wizard order is fixed:
-# environments → provider → architecture → stack.
+inputs: [PROJECT]
 
-schema_version: 1
-
-environments:
-  single: [prd]
-  dual: [preprod, prd]
-
-providers: [cloudflare, aws]
+providers:
+  cloudflare:
+    inputs: [CLOUDFLARE_ACCOUNT_ID, ZONE_NAME, STATE_BUCKET]
+  aws:
+    inputs: [STATE_BUCKET]
 
 architectures:
-  cloudflare-worker: { provider: cloudflare }
-  cloudflare-pages: { provider: cloudflare, infra: optional }
-  aws-ecs: { provider: aws }
+  cloudflare-worker:
+    provider: cloudflare
+    inputs: [R2_LOCATION, CUSTOM_DOMAIN, WORKER_NAME]
+  cloudflare-pages:
+    provider: cloudflare
+  aws-ecs:
+    provider: aws
 
 stacks:
-  nextjs: [cloudflare-worker]
-  astro: [cloudflare-pages]
-  node-puppeteer: [aws-ecs]
-  go-service: [aws-ecs]
+  nextjs:
+    architectures: [cloudflare-worker]
+  astro:
+    architectures: [cloudflare-pages]
+  node-puppeteer:
+    architectures: [aws-ecs]
+  go-service:
+    architectures: [aws-ecs]

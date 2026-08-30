@@ -7,7 +7,7 @@ on:
 
 jobs:
   validate:
-    name: 🧩 Render All Combinations
+    name: 🧩 Validate Manifest + Fragments
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,21 +21,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: 🏗️ Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: 💾 Cache Providers
-        uses: actions/cache@v4
-        with:
-          path: ~/.terraform.d/plugin-cache
-          key: tf-plugins-${{ hashFiles('fragments/infra/providers/*/providers.tf') }}
-
       - name: 🔍 Validate
-        env:
-          TF_PLUGIN_CACHE_DIR: ~/.terraform.d/plugin-cache
         run: |
-          mkdir -p ~/.terraform.d/plugin-cache
           go vet ./...
-          go run ./cmd/odyssey-cli validate
+          go run ./cmd validate

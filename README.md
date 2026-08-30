@@ -53,8 +53,6 @@ fragments/
       workflows/                deploy.yml
     architecture/<target>/      the deploy target's resources, copied in;
                                 variables.tf + config/ append to the provider's
-examples/
-  next-cloudflare-dual/         a fully rendered result
 ```
 
 ## The Makefile contract

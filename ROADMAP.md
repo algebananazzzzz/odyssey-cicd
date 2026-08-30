@@ -85,7 +85,7 @@ pass showing no Terraform or AWS residue survives marker deletion.
 | principle | convention over configuration: the layout is the contract, the engine knows what every path means |
 | manifest | declares only what exists and what fits together: environments, providers, architectures (each names its provider), stacks (each lists its architectures) |
 | conventions | `workflows/ci/` always copied; `workflows/deploy/<environments>/` by choice; `workflows/scripts/` → `.github/scripts/`; `makefile/base.mk` + selected `<axis>/<choice>/main.mk` appended in order, their `scripts/` → `scripts/`, `files/` → repo root; `infra/providers/<p>/` → `infra/` with `workflows/deploy.yml` as the deploy `infra` marker body and `workflows/ci/infra.yml` as the ci one; `infra/architecture/<a>/` `.tf` copied, `variables.tf` + `config/<env>.tfvars` appended; `stacks/<s>/.github/` → `.github/`, `stacks/<s>/files/` → repo root; selected `context.md`s compose AGENTS.md |
-| tokens | no token registry: the engine scans written files for `{{TOKEN}}`s and asks by name; `ENV`/`ENV_LIST` derived; a token in a filename expands per environment |
+| variables | no registry: the engine scans written files for `{{VAR}}`s and asks by name; `ENV`/`ENV_LIST` derived; a `{{VAR}}` in a filename expands per environment |
 
 ## Session 5, settled so far — odyssey-cli
 
@@ -95,7 +95,6 @@ pass showing no Terraform or AWS residue survives marker deletion.
 | engine | generic: walks the fragment manifest, renders forms from it; a new pattern is a fragment dir + manifest entry, never a code change |
 | templates source | tarball of this repo's `main`, fetched and cached (`~/.cache/odyssey/`); `--templates <dir>` overrides for local dev |
 | release channel | `main` — so this repo's CI validating fragments is load-bearing |
-| drift guard | manifest `schema_version`; an old binary meeting a newer schema asks for an upgrade instead of misrendering |
 | flow | waterfall wizard (environments, provider, architecture, stack) → rendered-plan preview → confirm → write |
 | headless | flags mirror the wizard; `--yes` skips the preview |
 | bootstrap | a stack fragment may declare a bootstrap section (commands + intent). `--bootstrap` runs it; the default prints it as a continuation prompt to take elsewhere |
