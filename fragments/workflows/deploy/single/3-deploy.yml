@@ -1,13 +1,14 @@
-# .github/workflows/2-deploy.yml
-name: 2. Deploy (prd)
+# .github/workflows/3-deploy.yml
+name: 3. Deploy (prd)
 
 # Trigger — two paths:
 #   1. Push to main. Cuts the next vX.Y.Z tag (patch bump) and deploys it.
 #   2. workflow_dispatch with an existing tag — redeploy or roll back.
 #
-# Single-environment shape: there is no promotion ladder, so the tag is cut and
-# shipped in one run. The deploy still checks out the tag rather than the branch,
-# so what ships always matches a named commit and a rollback target exists.
+# Single-environment shape: same 1-ci-branch / 2-ci-merge gates as the dual
+# shape, but no promotion ladder — the tag is cut and shipped in one run. The
+# deploy still checks out the tag rather than the branch, so what ships always
+# matches a named commit and a rollback target exists.
 
 on:
   push:

@@ -15,18 +15,23 @@ All stack variation collapses into a flat Makefile assembled at generate time.
 No YAML merging. No templating engine. No per-combination file explosion.
 
 ```
-workflow shape   × 2  (single, dual)     -> copied verbatim
+CI workflows     × 1  (shared)                            -> copied verbatim
+deploy workflows × 2  (single, dual)                      -> copied verbatim
 Makefile         × N  (stack × deploy × infra × services) -> concatenated text
-setup action     × 1 per stack           -> copied verbatim
+setup action     × 1 per stack                            -> copied verbatim
 ```
+
+Both shapes gate the same way — `1-ci-branch` then `2-ci-merge`. They differ
+only in what happens after the merge lands.
 
 ## Layout
 
 ```
 fragments/
   workflows/
-    dual/     1-ci-branch.yml  2-ci-merge.yml  3-deploy-preprod.yml  4-deploy-prd.yml
-    single/   1-ci.yml  2-deploy.yml
+    ci/            1-ci-branch.yml  2-ci-merge.yml     shared by both shapes
+    deploy/dual/   3-deploy-preprod.yml  4-deploy-prd.yml
+    deploy/single/ 3-deploy.yml
   stacks/
     node|go|python/.github/actions/setup/action.yml
   makefile/
@@ -91,11 +96,13 @@ ships nothing, silently.
 ### `single` — one environment
 
 ```
-1-ci      push non-main + PR   check, test, build, [integration]
-2-deploy  push main / dispatch cut vX.Y.Z, [infra], deploy prd
+1-ci-branch  push to non-main    check, test
+2-ci-merge   PR -> main          check, test, build, [integration]
+3-deploy     push main /dispatch cut vX.Y.Z, [infra], deploy prd
 ```
 
-No preprod to catch anything, so `1-ci` runs the full set on both paths.
+Same gates as `dual`, no promotion ladder — the tag is cut and shipped in one
+run. The deploy still checks out the tag, so a rollback target exists.
 
 ## Conditional blocks
 
