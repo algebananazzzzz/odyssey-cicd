@@ -1,0 +1,107 @@
+# .github/workflows/2-deploy.yml
+name: 2. Deploy (prd)
+
+# Trigger — two paths:
+#   1. Push to main. Cuts the next vX.Y.Z tag (patch bump) and deploys it.
+#   2. workflow_dispatch with an existing tag — redeploy or roll back.
+#
+# Single-environment shape: there is no promotion ladder, so the tag is cut and
+# shipped in one run. The deploy still checks out the tag rather than the branch,
+# so what ships always matches a named commit and a rollback target exists.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to deploy (e.g. v1.2.0)"
+        required: true
+        type: string
+
+run-name: Deploy ${{ inputs.tag || 'main' }} to prd
+
+concurrency:
+  group: deploy-prd
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  tag:
+    name: 🏷️ Cut Release Tag
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 2. 🔢 Compute Next Tag
+        id: bump
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
+
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          else
+            core="${latest#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
+            next="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          echo "previous: ${latest:-<none>}"
+          echo "next:     $next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+      - name: 3. 🏷️ Push Tag
+        env:
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$NEW_TAG" "$GITHUB_SHA"
+          git push origin "$NEW_TAG"
+
+  deploy:
+    name: ⚙️ Deploy to prd
+    runs-on: ubuntu-latest
+    needs: [tag]
+    if: |
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && needs.tag.result == 'success'))
+
+    environment:
+      name: prd
+      url: "{{PRD_URL}}"
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.tag.outputs.tag || inputs.tag }}
+
+      - name: 2. ⚙️ Setup Toolchain
+        uses: ./.github/actions/setup
+
+# >>> infra
+      - name: 3. ☁️ Provision Infrastructure
+        run: make infra ENV=prd
+# <<< infra
+
+      - name: 4. 🚀 Deploy
+        run: make deploy ENV=prd

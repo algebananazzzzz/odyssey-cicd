@@ -1,0 +1,181 @@
+# .github/workflows/3-deploy-preprod.yml
+name: 3. Deploy (preprod)
+
+# Trigger — exactly two cases:
+#   1. A PR is merged into main.
+#      -> Cut the next vX.Y.Z-rc tag (patch bump off the latest rc), deploy it.
+#   2. A vX.Y.Z-rc tag is pushed by hand.
+#      -> Deploy that tag. Use this to redeploy, or to cut a minor/major bump
+#         that the automatic patch bump will never produce.
+#
+# On a green deploy the `promote` job cuts the same version without the suffix
+# (v1.2.0-rc -> v1.2.0) and dispatches 4-deploy-prd.yml against it.
+#
+# WHY DISPATCH AND NOT JUST PUSH THE TAG:
+# A ref pushed with the default GITHUB_TOKEN does not start a workflow run.
+# workflow_dispatch and repository_dispatch are the two documented exceptions.
+# So the promote job pushes the tag (for provenance) AND dispatches explicitly.
+# Relying on the tag push alone silently ships nothing.
+#
+# The whole path runs on the merge commit, and the deploy checks out the TAG,
+# never a branch — what ships always matches a named commit.
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-rc"
+
+concurrency:
+  group: deploy-preprod
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Case 1 only. Skipped on the tag-push path.
+  # ---------------------------------------------------------------------------
+  tag:
+    name: 🏷️ Cut Pre-release Tag
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 2. 🔢 Compute Next Pre-release Tag
+        id: bump
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*-rc' --sort=-v:refname | head -n1)"
+
+          if [ -z "$latest" ]; then
+            next="v0.1.0-rc"
+          else
+            core="${latest#v}"; core="${core%-rc}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
+            next="v${MAJOR}.${MINOR}.$((PATCH + 1))-rc"
+          fi
+
+          echo "previous: ${latest:-<none>}"
+          echo "next:     $next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+      - name: 3. 🏷️ Push Tag
+        env:
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$NEW_TAG" "$MERGE_SHA"
+          git push origin "$NEW_TAG"
+
+  # ---------------------------------------------------------------------------
+  # Runs on the tag-push path, or after `tag` succeeds on the merge path.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: ⚙️ Deploy to preprod
+    runs-on: ubuntu-latest
+    needs: [tag]
+    if: |
+      always() &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'pull_request' && needs.tag.result == 'success'))
+
+    environment:
+      name: preprod
+      url: "{{PREPROD_URL}}"
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # merge path: the tag just cut. tag path: needs.tag.outputs.tag is
+          # empty, so fall back to the pushed ref.
+          ref: ${{ needs.tag.outputs.tag || github.ref }}
+
+      - name: 2. ⚙️ Setup Toolchain
+        uses: ./.github/actions/setup
+
+# >>> infra
+      - name: 3. ☁️ Provision Infrastructure
+        run: make infra ENV=preprod
+# <<< infra
+
+      - name: 4. 🚀 Deploy
+        run: make deploy ENV=preprod
+
+  # ---------------------------------------------------------------------------
+  # Green preprod -> cut vX.Y.Z and ship it.
+  # ---------------------------------------------------------------------------
+  promote:
+    name: 🏷️ Promote to Production
+    runs-on: ubuntu-latest
+    needs: [tag, deploy]
+    # `tag` is skipped on the tag-push path, which would cascade-skip this job.
+    # Gate on the deploy result directly.
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 2. 🏷️ Cut Production Tag
+        id: cut
+        env:
+          RC_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          case "$RC_TAG" in
+            v*.*.*-rc) ;;
+            *) echo "::error::'$RC_TAG' is not a vX.Y.Z-rc tag — refusing to promote."; exit 1 ;;
+          esac
+
+          PRD_TAG="${RC_TAG%-rc}"
+          echo "tag=$PRD_TAG" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/$PRD_TAG" >/dev/null; then
+            echo "::notice::$PRD_TAG already exists — reusing it."
+            exit 0
+          fi
+
+          # Tag the commit preprod actually deployed, not whatever main is now.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$PRD_TAG" "${RC_TAG}^{commit}"
+          git push origin "$PRD_TAG"
+
+      - name: 3. 🚢 Dispatch Production Deploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRD_TAG: ${{ steps.cut.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The tag push above cannot start a run (GITHUB_TOKEN). Dispatch does.
+          gh workflow run 4-deploy-prd.yml --ref "$PRD_TAG" -f tag="$PRD_TAG"
+          echo "::notice::Dispatched production deploy for $PRD_TAG."

@@ -1,0 +1,69 @@
+# .github/workflows/2-ci-merge.yml
+name: 2. CI (merge)
+
+# Trigger: a pull request targeting main. This is the gate — nothing reaches
+# main without it.
+#
+# Adds the two expensive layers 1-ci-branch.yml deliberately skips:
+#   - `make build`, which proves the artifact compiles
+#   - `make test-integration`, which needs real services
+#
+# The static/unit layers are repeated here on purpose. A PR can be opened from a
+# branch whose last push predates a change to main, so re-running them against
+# the merge result is the only way the gate means anything.
+#
+# No `environment:` is set. GitHub renders any job carrying `environment:` as a
+# deployment in the PR timeline, which is a lie for a check job.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: ⚙️ Static + Unit + Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. ⚙️ Setup Toolchain
+        uses: ./.github/actions/setup
+
+      - name: 3. 🔍 Static Checks
+        run: make check
+
+      - name: 4. 🧪 Unit Tests
+        run: make test
+
+      - name: 5. 🚧 Build
+        run: make build
+
+# >>> integration
+  integration:
+    name: 🧬 Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. ⚙️ Setup Toolchain
+        uses: ./.github/actions/setup
+
+      - name: 3. 🐘 Start Services
+        run: make up
+
+      - name: 4. 🧬 Integration Tests
+        run: make test-integration
+
+      - name: 5. 🧹 Stop Services
+        if: always()
+        run: make down
+# <<< integration

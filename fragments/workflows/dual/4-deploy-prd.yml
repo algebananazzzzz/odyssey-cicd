@@ -1,0 +1,73 @@
+# .github/workflows/4-deploy-prd.yml
+name: 4. Deploy (prd)
+
+# Trigger — two paths, both landing on the same job:
+#   1. workflow_dispatch with a vX.Y.Z tag. This is how 3-deploy-preprod.yml
+#      auto-ships a build that passed preprod, and how a human redeploys or
+#      rolls back to an older tag.
+#   2. push of a vX.Y.Z tag. Covers a tag pushed from a workstation, which does
+#      start a run (unlike one pushed by GITHUB_TOKEN inside Actions).
+#
+# A vX.Y.Z tag means "this build passed preprod". Pre-release tags are rejected:
+# prd ships clean vX.Y.Z only.
+#
+# The job always checks out the tag, never a branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Production tag to deploy (e.g. v1.2.0)"
+        required: true
+        type: string
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+run-name: Deploy ${{ inputs.tag || github.ref_name }} to prd
+
+concurrency:
+  group: deploy-prd
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    name: ⚙️ Deploy to prd
+    runs-on: ubuntu-latest
+
+    environment:
+      name: prd
+      url: "{{PRD_URL}}"
+
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - name: 1. ✅ Validate Tag
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v*.*.*-*) echo "::error::'$TAG' is a pre-release tag — prd ships clean vX.Y.Z only."; exit 1 ;;
+            v*.*.*)   ;;
+            *)        echo "::error::'$TAG' is not a vX.Y.Z tag."; exit 1 ;;
+          esac
+
+      - name: 2. 📄 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+
+      - name: 3. ⚙️ Setup Toolchain
+        uses: ./.github/actions/setup
+
+# >>> infra
+      - name: 4. ☁️ Provision Infrastructure
+        run: make infra ENV=prd
+# <<< infra
+
+      - name: 5. 🚀 Deploy
+        run: make deploy ENV=prd

@@ -1,0 +1,25 @@
+# The ONLY stack-aware file in .github/. Every workflow calls it as step 2, then
+# speaks nothing but `make`. Swapping stacks means swapping this file.
+
+name: Setup Toolchain
+description: Install Go and project dependencies.
+
+inputs:
+  go-version:
+    description: Go version constraint.
+    required: false
+    default: "^1.24.0"
+
+runs:
+  using: composite
+  steps:
+    - name: ⚙️ Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        check-latest: true
+        cache-dependency-path: "**/go.sum"
+
+    - name: 📦 Install Dependencies
+      shell: bash
+      run: make setup

@@ -1,0 +1,64 @@
+# .github/workflows/1-ci.yml
+name: 1. CI
+
+# Trigger: every push to a non-trunk branch, and every PR into main.
+#
+# Single-environment projects have no preprod to catch anything, so this runs
+# the full check set — including build and integration — on both paths. There
+# is no cheaper first tier to fall back on.
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 🚀 Static + Unit + Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. ⚙️ Setup Toolchain
+        uses: ./.github/actions/setup
+
+      - name: 3. 🔍 Static Checks
+        run: make check
+
+      - name: 4. 🧪 Unit Tests
+        run: make test
+
+      - name: 5. 🚧 Build
+        run: make build
+
+# >>> integration
+  integration:
+    name: 🧬 Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. 📄 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. ⚙️ Setup Toolchain
+        uses: ./.github/actions/setup
+
+      - name: 3. 🐘 Start Services
+        run: make up
+
+      - name: 4. 🧬 Integration Tests
+        run: make test-integration
+
+      - name: 5. 🧹 Stop Services
+        if: always()
+        run: make down
+# <<< integration
