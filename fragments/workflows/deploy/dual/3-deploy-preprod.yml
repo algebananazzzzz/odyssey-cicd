@@ -3,13 +3,13 @@ name: 3. Deploy (preprod)
 
 # Trigger — exactly two cases:
 #   1. A PR is merged into main.
-#      -> Cut the next vX.Y.Z-rc tag (patch bump off the latest rc), deploy it.
-#   2. A vX.Y.Z-rc tag is pushed by hand.
+#      -> Cut the next vX.Y.Z-beta tag (patch bump off the latest beta), deploy it.
+#   2. A vX.Y.Z-beta tag is pushed by hand.
 #      -> Deploy that tag. Use this to redeploy, or to cut a minor/major bump
 #         that the automatic patch bump will never produce.
 #
 # On a green deploy the `promote` job cuts the same version without the suffix
-# (v1.2.0-rc -> v1.2.0) and dispatches 4-deploy-prd.yml against it.
+# (v1.2.0-beta -> v1.2.0) and dispatches 4-deploy-prd.yml against it.
 #
 # WHY DISPATCH AND NOT JUST PUSH THE TAG:
 # A ref pushed with the default GITHUB_TOKEN does not start a workflow run.
@@ -27,7 +27,7 @@ on:
       - main
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+-rc"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta"
 
 concurrency:
   group: deploy-preprod
@@ -62,14 +62,24 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --tags --force
-          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*-rc' --sort=-v:refname | head -n1)"
+
+          # Glob only -beta tags. `--sort=-v:refname` mis-orders mixed
+          # pre-release and final tags unless versionsort.suffix is configured;
+          # restricting to one suffix makes the comparison purely numeric.
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*-beta' --sort=-v:refname | head -n1)"
 
           if [ -z "$latest" ]; then
-            next="v0.1.0-rc"
+            next="v0.1.0-beta"
           else
-            core="${latest#v}"; core="${core%-rc}"
+            core="${latest#v}"; core="${core%-beta}"
+            # The glob's `*` matches dots too, so v1.2.3.4-beta would reach here
+            # and break the arithmetic below with an opaque error. Reject it.
+            if [[ ! "$core" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Latest pre-release tag '$latest' is not vX.Y.Z-beta."
+              exit 1
+            fi
             IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
-            next="v${MAJOR}.${MINOR}.$((PATCH + 1))-rc"
+            next="v${MAJOR}.${MINOR}.$((PATCH + 1))-beta"
           fi
 
           echo "previous: ${latest:-<none>}"
@@ -146,17 +156,17 @@ jobs:
       - name: 2. 🏷️ Cut Production Tag
         id: cut
         env:
-          RC_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
+          BETA_TAG: ${{ needs.tag.outputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           git fetch --tags --force
 
-          case "$RC_TAG" in
-            v*.*.*-rc) ;;
-            *) echo "::error::'$RC_TAG' is not a vX.Y.Z-rc tag — refusing to promote."; exit 1 ;;
+          case "$BETA_TAG" in
+            v*.*.*-beta) ;;
+            *) echo "::error::'$BETA_TAG' is not a vX.Y.Z-beta tag — refusing to promote."; exit 1 ;;
           esac
 
-          PRD_TAG="${RC_TAG%-rc}"
+          PRD_TAG="${BETA_TAG%-beta}"
           echo "tag=$PRD_TAG" >> "$GITHUB_OUTPUT"
 
           if git rev-parse -q --verify "refs/tags/$PRD_TAG" >/dev/null; then
@@ -167,7 +177,7 @@ jobs:
           # Tag the commit preprod actually deployed, not whatever main is now.
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$PRD_TAG" "${RC_TAG}^{commit}"
+          git tag "$PRD_TAG" "${BETA_TAG}^{commit}"
           git push origin "$PRD_TAG"
 
       - name: 3. 🚢 Dispatch Production Deploy

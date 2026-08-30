@@ -59,6 +59,12 @@ jobs:
             next="v0.1.0"
           else
             core="${latest#v}"
+            # The glob's `*` matches dots too, so v1.2.3.4 would reach here and
+            # break the arithmetic below with an opaque error. Reject it.
+            if [[ ! "$core" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Latest tag '$latest' is not vX.Y.Z."
+              exit 1
+            fi
             IFS='.' read -r MAJOR MINOR PATCH <<< "$core"
             next="v${MAJOR}.${MINOR}.$((PATCH + 1))"
           fi

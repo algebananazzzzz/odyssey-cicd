@@ -8,7 +8,8 @@ name: 4. Deploy (prd)
 #   2. push of a vX.Y.Z tag. Covers a tag pushed from a workstation, which does
 #      start a run (unlike one pushed by GITHUB_TOKEN inside Actions).
 #
-# A vX.Y.Z tag means "this build passed preprod". Pre-release tags are rejected:
+# A vX.Y.Z tag means "this build passed preprod". Pre-release tags (-beta) are
+# rejected:
 # prd ships clean vX.Y.Z only.
 #
 # The job always checks out the tag, never a branch.

@@ -79,12 +79,12 @@ only universal variable. Never add a target purely for CI's benefit.
 ```
 1-ci-branch      push to non-main    check, test
 2-ci-merge       PR -> main          check, test, build, [integration]
-3-deploy-preprod PR merged / rc tag  cut vX.Y.Z-rc, [infra], deploy preprod,
+3-deploy-preprod PR merged /beta tag cut vX.Y.Z-beta, [infra], deploy preprod,
                                      cut vX.Y.Z, dispatch prd
 4-deploy-prd     dispatch / tag push validate tag, [infra], deploy prd
 ```
 
-A `vX.Y.Z-rc` tag means "merged". A `vX.Y.Z` tag means "passed preprod".
+A `vX.Y.Z-beta` tag means "merged". A `vX.Y.Z` tag means "passed preprod".
 Deploys always check out the tag, never a branch.
 
 **The GITHUB_TOKEN trap.** A ref pushed with the default `GITHUB_TOKEN` does
@@ -131,7 +131,7 @@ Current markers: `infra`, `integration`.
 
 | decision | value |
 |---|---|
-| pre-release suffix | `-rc` |
+| pre-release suffix | `-beta` |
 | workflow extension | `.yml` |
 | workflow naming | `<n>-<kind>-<scope>.yml` — `ci-*` and `deploy-*` group in the sidebar |
 | branch CI trigger | `push: branches-ignore: [main]` — fires before a PR exists |
