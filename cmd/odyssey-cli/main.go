@@ -190,7 +190,27 @@ func runTUI(templates string, m *types.Manifest, shapes []string, a render.Answe
 }
 
 func runFind(args []string) {
-	fatal(fmt.Errorf("find: not implemented yet"))
+	fs := flag.NewFlagSet("find", flag.ExitOnError)
+	templates := fs.String("templates", ".", "path to a cicd-templates checkout")
+	fs.Parse(args)
+	m, shapes := load(*templates)
+	rows, err := cli.Filter(cli.Rows(m), fs.Args())
+	if err != nil {
+		fatal(err)
+	}
+	switch len(rows) {
+	case 0:
+		fmt.Println("no rows match")
+		os.Exit(1)
+	case 1:
+		card, err := cli.Card(*templates, m, shapes, rows[0])
+		if err != nil {
+			fatal(err)
+		}
+		fmt.Print(card)
+	default:
+		fmt.Print(cli.Table(rows))
+	}
 }
 
 func fatal(err error) {
