@@ -113,7 +113,7 @@ pass showing no Terraform or AWS residue survives marker deletion.
 | release channel | `main` — so this repo's CI validating fragments is load-bearing |
 | flow | waterfall wizard (environments, provider, architecture, stack) → rendered-plan preview → confirm → write |
 | bootstrap | a stack fragment may declare a bootstrap section (commands + intent). `--bootstrap` runs it; the default prints it as a continuation prompt to take elsewhere |
-| engine | internal/render with in-memory Plan; render.Build + Plan.Apply(events) the only filesystem path; per-env expansion of {{ENV}} files; asks discovered by scanning the unsubstituted plan |
+| render engine | internal/render with in-memory Plan; render.Build + Plan.Apply(events) the only filesystem path; per-env expansion of {{ENV}} files; asks discovered by scanning the unsubstituted plan |
 | wizard | five pages (architecture, project, variables, plan, apply) as one parent Bubble Tea model embedding a fresh huh form per page; huh un-rejected because parent owns layout and options resolve synchronously from in-memory manifest; select order provider, architecture, stack, environments (environments filters nothing); esc back, ctrl+c abort, inline (no altscreen) |
 | headless | TTY detection on stdin+stdout; flags mirror pages; unique upstream axes derived (never guessed); teaching output on incomplete (exit 2); plan-only without --yes; --yes applies with per-unit log lines; gh-runnable checklist printed after |
 | find | stack-first denormalized rows; bare-term substring and axis=value filters; single match renders detail card with ready-to-edit new invocation |
