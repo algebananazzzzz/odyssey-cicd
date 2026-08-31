@@ -118,26 +118,27 @@ func runHeadless(templates string, m *types.Manifest, shapes []string, a render.
 	}
 	a.Vars = parsed
 	asks := render.Asks(m, scan)
-	var pending []render.Ask
 	incomplete := false
+	var pending []render.Ask
 	for _, ask := range asks {
-		if _, ok := parsed[scan.Envs[0]][ask.Name]; !ok {
-			pending = append(pending, ask)
-			if !ask.Optional {
-				incomplete = true
+		missing := false
+		for _, env := range scan.Envs {
+			if _, ok := a.Vars[env][ask.Name]; !ok {
+				missing = true
+				if ask.Optional {
+					a.Vars[env][ask.Name] = ""
+				} else {
+					incomplete = true
+				}
 			}
+		}
+		if missing {
+			pending = append(pending, ask)
 		}
 	}
 	if incomplete {
 		fmt.Print(cli.Report(a, derived, nil, pending))
 		os.Exit(2)
-	}
-	for _, env := range scan.Envs {
-		for _, ask := range asks {
-			if _, ok := a.Vars[env][ask.Name]; !ok {
-				a.Vars[env][ask.Name] = ""
-			}
-		}
 	}
 	finish(templates, m, a, yes, bootstrap)
 }
