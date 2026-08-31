@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Strip the pre-release suffix from TAG, tag the same commit with the result and
-# push it. Prints the new tag; diagnostics go to stderr. Idempotent.
-#
-#   TAG     required. The vX.Y.Z-beta tag that passed preprod.
-#   SUFFIX  optional, default -beta.
 set -euo pipefail
 
 : "${TAG:?TAG is required}"

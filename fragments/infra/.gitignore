@@ -2,7 +2,6 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
-.env
 override.tf
 override.tf.json
 *_override.tf

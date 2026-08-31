@@ -1,3 +1,3 @@
-r2_location   = "{{R2_LOCATION}}"
+r2_location   = "apac"
 custom_domain = "{{CUSTOM_DOMAIN}}"
-worker_name   = "{{WORKER_NAME}}"
+worker_name   = "{{ENV}}-web-worker-{{PROJECT}}"

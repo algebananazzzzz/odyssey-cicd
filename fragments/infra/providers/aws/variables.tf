@@ -12,8 +12,3 @@ variable "project_code" {
   description = "Project code. Last segment of every resource name, and the middle segment of the state key."
   type        = string
 }
-
-variable "aws_region" {
-  description = "Region every resource in this module is created in."
-  type        = string
-}

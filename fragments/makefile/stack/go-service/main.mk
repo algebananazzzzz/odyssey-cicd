@@ -1,5 +1,3 @@
-# --- go-service ---
-
 setup: ## Install dependencies
 	go mod download
 

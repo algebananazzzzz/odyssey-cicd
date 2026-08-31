@@ -12,10 +12,15 @@ variable "enable_custom_domain" {
   description = "Attach the custom domain. Requires the Worker to be deployed."
   type        = bool
   default     = false
+
+  validation {
+    condition     = !var.enable_custom_domain || var.custom_domain != ""
+    error_message = "enable_custom_domain needs custom_domain set."
+  }
 }
 
 variable "custom_domain" {
-  description = "Hostname routed to this environment's Worker."
+  description = "Hostname routed to this environment's Worker. Empty when the Worker has none."
   type        = string
 }
 

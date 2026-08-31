@@ -7,7 +7,7 @@ per-environment directories.
 The module is assembled from two layers:
 
 - **provider** (`providers/<cloud>/`) — the cloud itself: `backend.tf`,
-  `providers.tf`, `variables.tf`, `config/`, `.env.example`. One concern per
+  `providers.tf`, `variables.tf`, `config/`. One concern per
   file. A cloud swap replaces this whole layer and `config/` with it — the
   backend type is a property of the cloud, not something shared above it.
 - **architecture** (`architecture/<deploy-target>/`) — the resources the deploy
@@ -22,7 +22,6 @@ infra/
 ├── providers.tf              required_providers + provider block
 ├── variables.tf              env, project_code + this cloud's variables
 ├── <subject>.tf              the architecture's resources
-├── .env.example
 ├── .gitignore
 └── config/
     ├── <env>.tfbackend       state key
@@ -50,28 +49,37 @@ web, api, data, ops.
 
 Key: `<env>/<project>/terraform.tfstate`, in a bucket shared across projects.
 
-The `s3` backend is partial. `config/<env>.tfbackend` carries the bucket, key,
-region and endpoint; credentials never appear in it. R2 and S3 both use this
-backend — R2 sets `region = "auto"`, an `endpoints` override and the `skip_*`
-flags; S3 sets a real region, `encrypt` and `use_lockfile`.
+The `s3` backend is partial. `config/<env>.tfbackend` commits what is
+project-shaped: the key, plus each flavor's flags (R2 sets `region = "auto"`
+and the `skip_*` flags; S3 sets `encrypt` and `use_lockfile`). What is
+org-shaped arrives at init time from GitHub variables: `make infra` passes
+`bucket` from `STATE_BUCKET` via `-backend-config`, and the backend reads the
+region and the R2 endpoint from `AWS_REGION` / `AWS_ENDPOINT_URL_S3` in the job
+environment. Credentials appear in neither place.
 
 ## Credentials
 
 One rule: **a credential is never a Terraform variable.** Providers read their
 own environment variables, so the provider block takes no credential arguments
-and nothing in the module is marked `sensitive`. There is no `TF_VAR_` anywhere.
+and nothing in the module is marked `sensitive`. `TF_VAR_` carries identifiers
+only, never anything that authenticates.
 
-Everything that does not authenticate — account ids, zones, regions — goes in
-the committed `config/<env>.tfvars` or `.tfbackend`.
+Org-shaped identifiers (account id, zone, region, state bucket) are GitHub
+**variables**, fed to Terraform at runtime by the deploy workflow: `AWS_REGION`
+through the provider's own env lookup, `TF_VAR_cloudflare_account_id` and
+`TF_VAR_cloudflare_zone` for module variables, `STATE_BUCKET` through
+`-backend-config`. Project-shaped values stay in the committed
+`config/<env>.tfvars`.
 
-| Cloud | Secrets |
-|---|---|
-| Cloudflare | `CLOUDFLARE_API_TOKEN`; `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` for state |
-| AWS | `AWS_ROLE_ARN`, assumed over OIDC; provider and backend share the chain |
+| Cloud | Secrets | Variables |
+|---|---|---|
+| Cloudflare | `CLOUDFLARE_API_TOKEN`; `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` for state | `CLOUDFLARE_ACCOUNT_ID`, `ZONE_NAME`, `STATE_BUCKET` |
+| AWS | `AWS_ROLE_ARN`, assumed over OIDC; provider and backend share the chain | `AWS_REGION`, `STATE_BUCKET` |
 
-Set them per GitHub **environment**, not per repository, so a preprod credential
-cannot reach a prd apply. Locally the same names go in `infra/.env` — gitignored,
-`include`d by the Makefile, so plain `KEY=value` with no quotes or comments.
+Set secrets per GitHub **environment**, not per repository, so a preprod
+credential cannot reach a prd apply. Variables are org-shaped: set them once at
+org or repo level, and scope one to an environment only when prd differs from
+preprod. There is no local path: CI is the only place `make infra` runs.
 
 The `s3` backend reads no names but `AWS_*`, so R2 state credentials are stored
 under their own names and mapped onto `AWS_*` at the step that needs them.
@@ -89,7 +97,6 @@ variable defaulting to false. Deploy once, flip it in the tfvars, apply again.
 
 ```bash
 make infra-check               # fmt -check + validate; no credentials, no state
-make infra-plan ENV=<env>      # init + plan
 make infra ENV=<env>           # init + apply -auto-approve
 ```
 
@@ -100,13 +107,10 @@ fix it.
 `2-ci-merge` runs `infra-check` on every pull request, as its own job. It needs
 no secrets, so it runs on forks too.
 
-`infra-plan` needs credentials and state access, so adding it to CI would limit
-that job to pull requests from this repo.
-
 Deploys run `make infra ENV=<env>` inside the deploy job, before the app deploy,
 so anything the deploy tool binds to already exists.
 
 ## Committed vs not
 
 Committed: `config/*.tfvars`, `config/*.tfbackend`, `.terraform.lock.hcl`.
-Ignored: state, plans, `.terraform/`, `.env`.
+Ignored: state, plans, `.terraform/`.

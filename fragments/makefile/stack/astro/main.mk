@@ -1,5 +1,3 @@
-# --- astro ---
-
 setup: ## Install dependencies
 	npm ci --prefer-offline --no-audit --no-fund
 

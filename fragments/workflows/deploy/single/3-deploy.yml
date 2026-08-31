@@ -1,13 +1,5 @@
 name: Deploy (prd)
 
-# Push to main cuts vX.Y.Z and deploys it. Dispatch an existing tag to redeploy
-# or roll back.
-#
-# Bump level comes from the squash-merge commit subject:
-#   feat!: / fix!: / BREAKING CHANGE in body   major
-#   feat: / feat(scope):                       minor
-#   anything else                              patch
-
 on:
   push:
     branches:
@@ -44,9 +36,6 @@ jobs:
       - name: 🔢 Compute Next Tag
         id: bump
         env:
-          # Via env, never ${{ }} inside the run block. These strings are
-          # attacker-controlled on a fork's pull request, and interpolation
-          # splices them into the step as shell source.
           TITLE: ${{ github.event.head_commit.message }}
           BODY: ${{ github.event.head_commit.message }}
         run: |
@@ -66,7 +55,6 @@ jobs:
     name: 🚀 Deploy to prd
     runs-on: ubuntu-latest
     needs: [tag]
-    # `tag` is skipped on the dispatch path, so gate on event instead of needs.
     if: |
       always() &&
       (github.event_name == 'workflow_dispatch' ||
@@ -78,7 +66,6 @@ jobs:
 
     environment:
       name: "{{PRD_ENV}}"
-      url: "{{PRD_URL}}"
 
     steps:
       - name: 📥 Checkout
