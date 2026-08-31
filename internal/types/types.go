@@ -15,11 +15,17 @@ type Github struct {
 	Secrets   []string `yaml:"secrets"`
 }
 
+type Bootstrap struct {
+	Intent   string   `yaml:"intent"`
+	Commands []string `yaml:"commands"`
+}
+
 type Spec struct {
 	Provider      Provider         `yaml:"provider,omitempty"`
 	Architectures []Architecture   `yaml:"architectures,omitempty"`
 	Inputs        map[string]Input `yaml:"inputs,omitempty"`
 	Github        Github           `yaml:"github,omitempty"`
+	Bootstrap     *Bootstrap       `yaml:"bootstrap,omitempty"`
 }
 
 type Manifest struct {
