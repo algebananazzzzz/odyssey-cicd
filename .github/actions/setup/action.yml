@@ -1,0 +1,15 @@
+name: Setup Toolchain
+description: Install Go and project dependencies.
+
+runs:
+  using: composite
+  steps:
+    - name: ⚙️ Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache-dependency-path: "**/go.sum"
+
+    - name: 📦 Install Dependencies
+      shell: bash
+      run: make setup
