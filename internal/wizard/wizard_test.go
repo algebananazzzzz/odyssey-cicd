@@ -37,6 +37,7 @@ func testManifest() *types.Manifest {
 var (
 	enter = tea.KeyMsg{Type: tea.KeyEnter}
 	down  = tea.KeyMsg{Type: tea.KeyDown}
+	left  = tea.KeyMsg{Type: tea.KeyLeft}
 	esc   = tea.KeyMsg{Type: tea.KeyEsc}
 	ctrlC = tea.KeyMsg{Type: tea.KeyCtrlC}
 )
@@ -206,5 +207,48 @@ func TestVariablesScreens(t *testing.T) {
 	}
 	if w.Answers.Vars["preprod"]["CUSTOM_DOMAIN"] != "pre.example.com" {
 		t.Fatalf("vars not harvested: %v", w.Answers.Vars)
+	}
+}
+
+func TestPlanPageAndConfirm(t *testing.T) {
+	m := selectAll(t)
+	m = drive(t, m, typeString("acme-web")...)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	m = drive(t, m, typeString("pre.example.com")...)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	w := m.(*Model)
+	if w.Page() != pagePlan {
+		t.Fatalf("page = %v", w.Page())
+	}
+	view := m.View()
+	if !strings.Contains(view, "files") || !strings.Contains(view, "Write") {
+		t.Fatalf("plan view:\n%s", view)
+	}
+	m = drive(t, m, left)
+	m = drive(t, m, enter)
+	if !m.(*Model).Aborted() {
+		t.Fatal("answering No did not abort")
+	}
+}
+
+func TestFlagSeededSkipsPages(t *testing.T) {
+	a := render.Answers{
+		Provider: "cloudflare", Architecture: "cloudflare-worker",
+		Stack: "nextjs", Environments: "dual", Project: "acme-web", Dir: "./x-does-not-exist",
+	}
+	w := New("../..", testManifest(), []string{"dual", "single"}, a, false)
+	var m tea.Model = w
+	m = drive(t, m, collect(w.Init())...)
+	m = drive(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	if got := m.(*Model).Page(); got != pageVariables {
+		t.Fatalf("flag-seeded start page = %v, want pageVariables", got)
+	}
+	m = drive(t, m, esc)
+	if !m.(*Model).Aborted() {
+		t.Fatal("esc on the first live page should abort, flag-completed pages are not revisited")
 	}
 }

@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 
 	"github.com/charmbracelet/huh"
@@ -92,6 +93,14 @@ func variablesForm(asks []render.Ask, envs []string, screen int, vals map[string
 			Validate(requiredUnless(ask.Optional)).Value(vals[env][ask.Name]))
 	}
 	return huh.NewForm(huh.NewGroup(fields...)).WithTheme(theme())
+}
+
+func confirmForm(n int, dir string, ok *bool) *huh.Form {
+	return huh.NewForm(huh.NewGroup(
+		huh.NewConfirm().Key("write").
+			Title(fmt.Sprintf("Write %d files to %s?", n, dir)).
+			Affirmative("Yes").Negative("No").Value(ok),
+	)).WithTheme(theme())
 }
 
 func requiredUnless(optional bool) func(string) error {

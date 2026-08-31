@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"github.com/algebananazzzzz/odyssey/internal/render"
 	"github.com/algebananazzzzz/odyssey/internal/types"
 	"github.com/algebananazzzzz/odyssey/internal/validate"
+	"github.com/algebananazzzzz/odyssey/internal/wizard"
 )
 
 func main() {
@@ -181,7 +181,33 @@ func finish(templates string, m *types.Manifest, a render.Answers, yes, bootstra
 }
 
 func runTUI(templates string, m *types.Manifest, shapes []string, a render.Answers, vars varFlags, yes, bootstrap bool) {
-	fatal(errors.New("TUI under construction; run without a TTY for headless"))
+	if err := cli.Infer(m, &a); err != nil {
+		fatal(err)
+	}
+	if a.Environments != "" && len(vars) > 0 {
+		scan, err := render.Build(templates, m, a)
+		if err != nil {
+			fatal(err)
+		}
+		parsed, err := cli.ParseVars(vars, scan.Envs)
+		if err != nil {
+			fatal(err)
+		}
+		a.Vars = parsed
+	}
+	p, err := wizard.Run(templates, m, shapes, a, yes)
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Println()
+	fmt.Print(cli.Checklist(p))
+	if bootstrap {
+		if err := cli.RunBootstrap(p, p.Dir); err != nil {
+			fatal(err)
+		}
+	} else {
+		fmt.Print(cli.PrintBootstrap(p))
+	}
 }
 
 func runFind(args []string) {
