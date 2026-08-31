@@ -29,8 +29,8 @@ One flat module, assembled from two fragment layers: `providers/<cloud>` (backen
 ## Variables
 
 - lower_case names, `description` on every one, `validation` when the value set is finite.
-- A credential is never a variable: no `sensitive`, no `TF_VAR_`. Providers and backend read their own environment variables.
-- Non-secret identifiers (account id, zone, region) go in committed `config/<env>.tfvars`.
+- A credential is never a variable: no `sensitive`, and `TF_VAR_` never carries one. Providers and backend read their own environment variables.
+- Org-shaped identifiers (account id, zone, region, state bucket) are GitHub variables fed at runtime: env names the provider and backend read natively where they exist, `TF_VAR_*` for module variables otherwise. Project-shaped values go in committed `config/<env>.tfvars`.
 - A default only for a true knob (`log_retention_days = 7`); everything env-shaped comes from tfvars.
 - A resource that can only exist after the first deploy sits behind `enable_*` bool defaulting `false`.
 

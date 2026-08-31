@@ -1,15 +1,22 @@
-inputs: [PROJECT]
+inputs:
+  PREPROD_URL: {optional: true}
+  PRD_URL: {optional: true}
 
 providers:
   cloudflare:
-    inputs: [CLOUDFLARE_ACCOUNT_ID, ZONE_NAME, STATE_BUCKET]
+    github:
+      variables: [STATE_BUCKET, CLOUDFLARE_ACCOUNT_ID, ZONE_NAME]
+      secrets: [CLOUDFLARE_API_TOKEN, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY]
   aws:
-    inputs: [STATE_BUCKET]
+    github:
+      variables: [STATE_BUCKET, AWS_REGION]
+      secrets: [AWS_ROLE_ARN]
 
 architectures:
   cloudflare-worker:
     provider: cloudflare
-    inputs: [R2_LOCATION, CUSTOM_DOMAIN, WORKER_NAME]
+    inputs:
+      CUSTOM_DOMAIN: {optional: true}
   cloudflare-pages:
     provider: cloudflare
   aws-ecs:
