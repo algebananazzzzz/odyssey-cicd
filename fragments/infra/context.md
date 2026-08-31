@@ -97,7 +97,6 @@ variable defaulting to false. Deploy once, flip it in the tfvars, apply again.
 
 ```bash
 make infra-check               # fmt -check + validate; no credentials, no state
-make infra-plan ENV=<env>      # init + plan
 make infra ENV=<env>           # init + apply -auto-approve
 ```
 
@@ -107,9 +106,6 @@ fix it.
 
 `2-ci-merge` runs `infra-check` on every pull request, as its own job. It needs
 no secrets, so it runs on forks too.
-
-`infra-plan` needs credentials and state access, so adding it to CI would limit
-that job to pull requests from this repo.
 
 Deploys run `make infra ENV=<env>` inside the deploy job, before the app deploy,
 so anything the deploy tool binds to already exists.

@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Print the next release tag on stdout; diagnostics go to stderr.
-#
-#   TITLE   required. Only its first line decides the bump level.
-#   BODY    optional. Searched, with TITLE, for BREAKING CHANGE.
-#   SUFFIX  optional. "-beta" walks the pre-release ladder.
 set -euo pipefail
 
 : "${TITLE:?TITLE is required}"
@@ -14,8 +9,6 @@ subject="${TITLE%%$'\n'*}"
 
 git fetch --tags --force >/dev/null 2>&1 || true
 
-# -v:refname mis-orders mixed pre-release and final tags unless
-# versionsort.suffix is configured, so glob one suffix only.
 if [ -n "$SUFFIX" ]; then
   latest="$(git tag -l "v[0-9]*.[0-9]*.[0-9]*${SUFFIX}" --sort=-v:refname | head -n1)"
 else

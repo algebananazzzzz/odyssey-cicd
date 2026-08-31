@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Build the image, push it to this env's ECR repository and register a new
-# task definition revision pointing at it. Prints the revision ARN; diagnostics
-# go to stderr.
-#
-#   ENV      required. Environment being deployed.
-#   PROJECT  required. Project code; picks the ECR repository.
-#   TAG      optional. Image tag, default `git describe`.
-#
-# Expects taskdef.json at the repo root: the register-task-definition input,
-# with the env-scoped fields (family, roles, image, log options) overwritten here.
 set -euo pipefail
 
 : "${ENV:?ENV is required}"
