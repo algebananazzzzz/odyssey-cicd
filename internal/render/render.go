@@ -35,6 +35,7 @@ type File struct {
 type Plan struct {
 	Dir       string
 	Envs      []string
+	Answers   Answers
 	Files     []File
 	Github    types.Github
 	Bootstrap *types.Bootstrap
@@ -112,7 +113,7 @@ func Build(templates string, m *types.Manifest, a Answers) (*Plan, error) {
 	if err := r.compose(m); err != nil {
 		return nil, err
 	}
-	p := &Plan{Dir: a.Dir, Envs: envs, Files: r.files}
+	p := &Plan{Dir: a.Dir, Envs: envs, Answers: a, Files: r.files}
 	p.Github, p.Bootstrap = metadata(m, a)
 	return p, nil
 }
