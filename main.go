@@ -1,9 +1,12 @@
 package main
 
 import (
+	"embed"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -12,15 +15,23 @@ import (
 
 	"github.com/algebananazzzzz/odyssey/internal/cli"
 	"github.com/algebananazzzzz/odyssey/internal/render"
+	"github.com/algebananazzzzz/odyssey/internal/tui"
 	"github.com/algebananazzzzz/odyssey/internal/types"
+	"github.com/algebananazzzzz/odyssey/internal/update"
 	"github.com/algebananazzzzz/odyssey/internal/validate"
-	"github.com/algebananazzzzz/odyssey/internal/wizard"
 )
+
+//go:embed all:fragments manifest.yml
+var embedded embed.FS
+
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 	}
+	cachePath := update.CachePath()
+	go update.Refresh(cachePath, update.GitHubAPI)
 	switch os.Args[1] {
 	case "validate":
 		runValidate(os.Args[2:])
@@ -28,34 +39,56 @@ func main() {
 		runNew(os.Args[2:])
 	case "find":
 		runFind(os.Args[2:])
+	case "version":
+		fmt.Println(version)
+		return
+	case "update":
+		runUpdate(os.Args[2:])
+		return
 	default:
 		usage()
 	}
+	update.Nudge(os.Stderr, cachePath, version)
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: odyssey-cli validate|new|find [flags]")
+	fmt.Fprintln(os.Stderr, "usage: odyssey-cli validate|new|find|version|update [flags]")
 	os.Exit(2)
 }
 
-func load(templates string) (*types.Manifest, []string) {
-	m, err := validate.Manifest(templates + "/manifest.yml")
+func runUpdate(args []string) {
+	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	yes := fs.Bool("y", false, "apply without confirmation")
+	fs.Parse(args)
+	if err := update.Run(os.Stdout, os.Stdin, version, update.GitHubAPI, *yes); err != nil {
+		fatal(err)
+	}
+}
+
+func load(templates string) (*types.Manifest, []string, fs.FS) {
+	var tfs fs.FS = embedded
+	if templates != "" {
+		tfs = os.DirFS(templates)
+	}
+	m, err := validate.Manifest(tfs)
 	if err != nil {
 		fatal(err)
 	}
-	if err := validate.All(templates+"/fragments", m); err != nil {
-		fatal(err)
+	if templates != "" {
+		if err := validate.All(filepath.Join(templates, "fragments"), m); err != nil {
+			fatal(err)
+		}
 	}
-	shapes, err := render.Shapes(templates)
+	shapes, err := render.Shapes(tfs)
 	if err != nil {
 		fatal(err)
 	}
-	return m, shapes
+	return m, shapes, tfs
 }
 
 func runValidate(args []string) {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
-	templates := fs.String("templates", ".", "path to a cicd-templates checkout")
+	templates := fs.String("templates", ".", "path to a templates checkout")
 	fs.Parse(args)
 	load(*templates)
 	fmt.Println("manifest and fragments are valid")
@@ -68,7 +101,7 @@ func (v *varFlags) Set(s string) error { *v = append(*v, s); return nil }
 
 func runNew(args []string) {
 	fs := flag.NewFlagSet("new", flag.ExitOnError)
-	templates := fs.String("templates", ".", "path to a cicd-templates checkout")
+	templates := fs.String("templates", "", "path to a templates checkout (default: embedded)")
 	var a render.Answers
 	fs.StringVar(&a.Provider, "provider", "", "cloud provider")
 	fs.StringVar(&a.Architecture, "architecture", "", "deploy architecture")
@@ -82,19 +115,19 @@ func runNew(args []string) {
 	bootstrap := fs.Bool("bootstrap", false, "run the stack bootstrap after apply")
 	fs.Parse(args)
 
-	m, shapes := load(*templates)
+	m, shapes, tfs := load(*templates)
 	if interactive() {
-		runTUI(*templates, m, shapes, a, vars, *yes, *bootstrap)
+		runTUI(tfs, m, shapes, a, vars, *yes, *bootstrap)
 		return
 	}
-	runHeadless(*templates, m, shapes, a, vars, *yes, *bootstrap)
+	runHeadless(tfs, m, shapes, a, vars, *yes, *bootstrap)
 }
 
 func interactive() bool {
 	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
 }
 
-func runHeadless(templates string, m *types.Manifest, shapes []string, a render.Answers, vars varFlags, yes, bootstrap bool) {
+func runHeadless(tfs fs.FS, m *types.Manifest, shapes []string, a render.Answers, vars varFlags, yes, bootstrap bool) {
 	derived := map[string]bool{}
 	before := a
 	if err := cli.Infer(m, &a); err != nil {
@@ -119,12 +152,12 @@ func runHeadless(templates string, m *types.Manifest, shapes []string, a render.
 		}
 		var asks []render.Ask
 		if a.Provider != "" && a.Architecture != "" && a.Stack != "" && a.Environments == "" {
-			asks = unionAsks(templates, m, a, shapes)
+			asks = unionAsks(tfs, m, a, shapes)
 		}
 		fmt.Print(cli.Report(a, derived, missing, asks))
 		os.Exit(2)
 	}
-	scan, err := render.Build(templates, m, a)
+	scan, err := render.Build(tfs, m, a)
 	if err != nil {
 		fatal(err)
 	}
@@ -156,15 +189,15 @@ func runHeadless(templates string, m *types.Manifest, shapes []string, a render.
 		fmt.Print(cli.Report(a, derived, nil, pending))
 		os.Exit(2)
 	}
-	finish(templates, m, a, yes, bootstrap)
+	finish(tfs, m, a, yes, bootstrap)
 }
 
-func unionAsks(templates string, m *types.Manifest, a render.Answers, shapes []string) []render.Ask {
+func unionAsks(tfs fs.FS, m *types.Manifest, a render.Answers, shapes []string) []render.Ask {
 	byName := map[string]render.Ask{}
 	for _, shape := range shapes {
 		a2 := a
 		a2.Environments = shape
-		scan, err := render.Build(templates, m, a2)
+		scan, err := render.Build(tfs, m, a2)
 		if err != nil {
 			continue
 		}
@@ -186,14 +219,14 @@ func unionAsks(templates string, m *types.Manifest, a render.Answers, shapes []s
 	return asks
 }
 
-func finish(templates string, m *types.Manifest, a render.Answers, yes, bootstrap bool) {
+func finish(tfs fs.FS, m *types.Manifest, a render.Answers, yes, bootstrap bool) {
 	if a.Dir == "" {
 		a.Dir = "./" + a.Project
 	}
 	if err := render.TargetOK(a.Dir); err != nil {
 		fatal(err)
 	}
-	p, err := render.Build(templates, m, a)
+	p, err := render.Build(tfs, m, a)
 	if err != nil {
 		fatal(err)
 	}
@@ -224,12 +257,12 @@ func finish(templates string, m *types.Manifest, a render.Answers, yes, bootstra
 	}
 }
 
-func runTUI(templates string, m *types.Manifest, shapes []string, a render.Answers, vars varFlags, yes, bootstrap bool) {
+func runTUI(tfs fs.FS, m *types.Manifest, shapes []string, a render.Answers, vars varFlags, yes, bootstrap bool) {
 	if err := cli.Infer(m, &a); err != nil {
 		fatal(err)
 	}
 	if a.Environments != "" && len(vars) > 0 {
-		scan, err := render.Build(templates, m, a)
+		scan, err := render.Build(tfs, m, a)
 		if err != nil {
 			fatal(err)
 		}
@@ -239,7 +272,7 @@ func runTUI(templates string, m *types.Manifest, shapes []string, a render.Answe
 		}
 		a.Vars = parsed
 	}
-	p, err := wizard.Run(templates, m, shapes, a, yes)
+	p, err := tui.Run(tfs, m, shapes, a, yes)
 	if err != nil {
 		fatal(err)
 	}
@@ -256,9 +289,9 @@ func runTUI(templates string, m *types.Manifest, shapes []string, a render.Answe
 
 func runFind(args []string) {
 	fs := flag.NewFlagSet("find", flag.ExitOnError)
-	templates := fs.String("templates", ".", "path to a cicd-templates checkout")
+	templates := fs.String("templates", "", "path to a templates checkout (default: embedded)")
 	fs.Parse(args)
-	m, shapes := load(*templates)
+	m, shapes, tfs := load(*templates)
 	rows, err := cli.Filter(cli.Rows(m), fs.Args())
 	if err != nil {
 		fatal(err)
@@ -268,7 +301,7 @@ func runFind(args []string) {
 		fmt.Println("no rows match")
 		os.Exit(1)
 	case 1:
-		card, err := cli.Card(*templates, m, shapes, rows[0])
+		card, err := cli.Card(tfs, m, shapes, rows[0])
 		if err != nil {
 			fatal(err)
 		}

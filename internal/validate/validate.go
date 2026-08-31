@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/algebananazzzzz/odyssey/internal/types"
 	"github.com/algebananazzzzz/odyssey/internal/utils"
 )
@@ -28,10 +30,14 @@ var engineVars = map[string]bool{
 	"PRD_ENV":     true,
 }
 
-func Manifest(path string) (*types.Manifest, error) {
-	var m types.Manifest
-	if err := utils.ReadYAML(path, &m); err != nil {
+func Manifest(fsys fs.FS) (*types.Manifest, error) {
+	data, err := fs.ReadFile(fsys, "manifest.yml")
+	if err != nil {
 		return nil, err
+	}
+	var m types.Manifest
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("manifest.yml: %w", err)
 	}
 	return &m, nil
 }

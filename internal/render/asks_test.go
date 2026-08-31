@@ -8,7 +8,7 @@ import (
 )
 
 func TestAsksForNextjs(t *testing.T) {
-	m, err := validate.Manifest(templates + "/manifest.yml")
+	m, err := validate.Manifest(templates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestUnresolvedEmptyWhenAnswered(t *testing.T) {
 }
 
 func TestEveryCombinationRenders(t *testing.T) {
-	m, err := validate.Manifest(templates + "/manifest.yml")
+	m, err := validate.Manifest(templates)
 	if err != nil {
 		t.Fatal(err)
 	}

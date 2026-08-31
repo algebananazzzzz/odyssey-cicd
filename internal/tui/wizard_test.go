@@ -1,6 +1,7 @@
-package wizard
+package tui
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -81,7 +82,7 @@ func collect(cmd tea.Cmd) []tea.Msg {
 
 func start(t *testing.T) tea.Model {
 	t.Helper()
-	m := New("../..", testManifest(), []string{"dual", "single"}, render.Answers{}, false)
+	m := New(os.DirFS("../.."), testManifest(), []string{"dual", "single"}, render.Answers{}, false)
 	var model tea.Model = m
 	queue := collect(m.Init())
 	model = drive(t, model, queue...)
@@ -309,7 +310,7 @@ func TestFlagSeededSkipsPages(t *testing.T) {
 		Provider: "cloudflare", Architecture: "cloudflare-worker",
 		Stack: "nextjs", Environments: "dual", Project: "acme-web", Dir: "./x-does-not-exist",
 	}
-	w := New("../..", testManifest(), []string{"dual", "single"}, a, false)
+	w := New(os.DirFS("../.."), testManifest(), []string{"dual", "single"}, a, false)
 	var m tea.Model = w
 	m = drive(t, m, collect(w.Init())...)
 	m = drive(t, m, tea.WindowSizeMsg{Width: 100, Height: 30})

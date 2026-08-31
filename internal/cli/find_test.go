@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestTable(t *testing.T) {
 func TestCard(t *testing.T) {
 	m := manifest(t)
 	rows, _ := Filter(Rows(m), []string{"nextjs"})
-	out, err := Card("../..", m, []string{"dual", "single"}, rows[0])
+	out, err := Card(os.DirFS("../.."), m, []string{"dual", "single"}, rows[0])
 	if err != nil {
 		t.Fatal(err)
 	}

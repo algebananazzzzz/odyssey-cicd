@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 
 func manifest(t *testing.T) *types.Manifest {
 	t.Helper()
-	m, err := validate.Manifest("../../manifest.yml")
+	m, err := validate.Manifest(os.DirFS("../.."))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,7 +2,6 @@ package render
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -41,8 +40,8 @@ type Plan struct {
 	Bootstrap *types.Bootstrap
 }
 
-func Shapes(templates string) ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(templates, "fragments/workflows/deploy"))
+func Shapes(tfs fs.FS) ([]string, error) {
+	entries, err := fs.ReadDir(tfs, "fragments/workflows/deploy")
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +96,11 @@ type renderer struct {
 	files []File
 }
 
-func Build(templates string, m *types.Manifest, a Answers) (*Plan, error) {
-	frag := os.DirFS(filepath.Join(templates, "fragments"))
+func Build(tfs fs.FS, m *types.Manifest, a Answers) (*Plan, error) {
+	frag, err := fs.Sub(tfs, "fragments")
+	if err != nil {
+		return nil, err
+	}
 	envs, err := Envs(frag, a.Environments)
 	if err != nil {
 		return nil, err
@@ -223,7 +225,7 @@ func (r *renderer) workflows() error {
 		}
 	}
 	for dir, infraBody := range map[string]string{
-		"workflows/ci":                            ciInfra,
+		"workflows/ci":                         ciInfra,
 		"workflows/deploy/" + r.a.Environments: deployInfra,
 	} {
 		entries, err := fs.ReadDir(r.frag, dir)
@@ -249,4 +251,3 @@ func (r *renderer) workflows() error {
 	}
 	return nil
 }
-

@@ -1,13 +1,14 @@
 package render
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/algebananazzzzz/odyssey/internal/validate"
 )
 
-const templates = "../.."
+var templates = os.DirFS("../..")
 
 func answers() Answers {
 	return Answers{
@@ -22,7 +23,7 @@ func answers() Answers {
 
 func testBuild(t *testing.T, a Answers) *Plan {
 	t.Helper()
-	m, err := validate.Manifest(templates + "/manifest.yml")
+	m, err := validate.Manifest(templates)
 	if err != nil {
 		t.Fatal(err)
 	}

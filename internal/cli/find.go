@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io/fs"
 	"sort"
 	"strings"
 
@@ -70,12 +71,12 @@ func Table(rows []Row) string {
 	return b.String()
 }
 
-func Card(templates string, m *types.Manifest, shapes []string, r Row) (string, error) {
+func Card(tfs fs.FS, m *types.Manifest, shapes []string, r Row) (string, error) {
 	a := render.Answers{
 		Provider: r.Provider, Architecture: r.Architecture,
 		Stack: r.Stack, Environments: shapes[0], Project: "project",
 	}
-	scan, err := render.Build(templates, m, a)
+	scan, err := render.Build(tfs, m, a)
 	if err != nil {
 		return "", err
 	}

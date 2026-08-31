@@ -1,4 +1,4 @@
-package wizard
+package tui
 
 import (
 	"strings"

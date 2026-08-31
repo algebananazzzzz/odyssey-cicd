@@ -1,8 +1,9 @@
-package wizard
+package tui
 
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -29,7 +30,7 @@ const (
 )
 
 type Model struct {
-	templates string
+	templates fs.FS
 	manifest  *types.Manifest
 	shapes    []string
 	yes       bool
@@ -63,7 +64,7 @@ type Model struct {
 
 func cliInfer(m *types.Manifest, a *render.Answers) error { return cli.Infer(m, a) }
 
-func New(templates string, m *types.Manifest, shapes []string, a render.Answers, yes bool) *Model {
+func New(templates fs.FS, m *types.Manifest, shapes []string, a render.Answers, yes bool) *Model {
 	w := &Model{templates: templates, manifest: m, shapes: shapes, Answers: a, yes: yes, flagPages: map[page]bool{}}
 	w.lg = lipgloss.DefaultRenderer()
 	w.styles = NewStyles(w.lg)
@@ -449,7 +450,7 @@ func (w *Model) appErrorBoundaryView(text string) string {
 	)
 }
 
-func Run(templates string, m *types.Manifest, shapes []string, a render.Answers, yes bool) (*render.Plan, error) {
+func Run(templates fs.FS, m *types.Manifest, shapes []string, a render.Answers, yes bool) (*render.Plan, error) {
 	w := New(templates, m, shapes, a, yes)
 	out, err := tea.NewProgram(w, tea.WithAltScreen()).Run()
 	if err != nil {
