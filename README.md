@@ -45,11 +45,10 @@ fragments/
     stack/<use case>/           setup / check / test / build
     deploy/<target>/            deploy; ships scripts/ when a recipe outgrows
                                 3 lines (aws-ecs)
-    infra/terraform/            infra / infra-plan / infra-check
+    infra/terraform/            infra / infra-check
   infra/
     .gitignore                  -> infra/;  context.md composes into AGENTS.md
-    providers/{aws,cloudflare}/ backend.tf, providers.tf, variables.tf,
-                                config/, .env.example
+    providers/{aws,cloudflare}/ backend.tf, providers.tf, variables.tf, config/
       workflows/                deploy.yml
     architecture/<target>/      the deploy target's resources, copied in;
                                 variables.tf + config/ append to the provider's
@@ -73,7 +72,7 @@ Optional, present only when the matching fragment is selected:
 
 | target | when |
 |---|---|
-| `infra` / `infra-plan` / `infra-check` | project has `infra/` Terraform |
+| `infra` / `infra-check` | project has `infra/` Terraform |
 
 Absent target means the generator drops the matching CI step. No runtime
 guards, no no-op stubs.
@@ -221,8 +220,7 @@ request, as one job in the same gate as everything else.
 | token | example |
 |---|---|
 | `{{PROJECT}}` | `intranet-web` |
-| `{{PREPROD_URL}}` | `https://beta.example.com` |
-| `{{PRD_URL}}` | `https://example.com` |
+| `{{CUSTOM_DOMAIN}}` | `example.com` — Cloudflare only, asked once per environment |
 | `{{ENV}}` | `preprod` — also expands in filenames, once per environment |
 | `{{ENV_LIST}}` | `["preprod", "prd"]` |
 | `{{STATE_BUCKET}}` | `com-infra-tfstate` |
