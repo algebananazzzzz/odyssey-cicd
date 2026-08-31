@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"github.com/algebananazzzzz/odyssey/internal/render"
 	"github.com/algebananazzzzz/odyssey/internal/types"
 	"github.com/algebananazzzzz/odyssey/internal/validate"
-	"github.com/algebananazzzzz/odyssey/internal/wizard"
 )
 
 func main() {
@@ -181,12 +181,7 @@ func finish(templates string, m *types.Manifest, a render.Answers, yes, bootstra
 }
 
 func runTUI(templates string, m *types.Manifest, shapes []string, a render.Answers, vars varFlags, yes, bootstrap bool) {
-	s, err := wizard.Run(m, shapes)
-	if err != nil {
-		fatal(err)
-	}
-	fmt.Printf("environments: %s\nprovider: %s\narchitecture: %s\nstack: %s\n",
-		s.Environments, s.Provider, s.Architecture, s.Stack)
+	fatal(errors.New("TUI under construction; run without a TTY for headless"))
 }
 
 func runFind(args []string) {

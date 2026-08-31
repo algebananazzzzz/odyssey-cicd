@@ -1,99 +1,122 @@
 package wizard
 
 import (
-	"slices"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/algebananazzzzz/odyssey/internal/render"
 	"github.com/algebananazzzzz/odyssey/internal/types"
 )
 
-func testModel() model {
-	m := model{
-		manifest: &types.Manifest{
-			Providers: map[types.Provider]types.Spec{"aws": {}, "cloudflare": {}},
-			Architectures: map[types.Architecture]types.Spec{
-				"aws-ecs":           {Provider: "aws"},
-				"cloudflare-pages":  {Provider: "cloudflare"},
-				"cloudflare-worker": {Provider: "cloudflare"},
-			},
-			Stacks: map[types.Stack]types.Spec{
-				"astro":          {Architectures: []types.Architecture{"cloudflare-pages"}},
-				"go-service":     {Architectures: []types.Architecture{"aws-ecs"}},
-				"nextjs":         {Architectures: []types.Architecture{"cloudflare-worker"}},
-				"node-puppeteer": {Architectures: []types.Architecture{"aws-ecs"}},
-			},
+func testManifest() *types.Manifest {
+	return &types.Manifest{
+		Providers: map[types.Provider]types.Spec{"aws": {}, "cloudflare": {}},
+		Architectures: map[types.Architecture]types.Spec{
+			"aws-ecs":           {Provider: "aws"},
+			"cloudflare-pages":  {Provider: "cloudflare"},
+			"cloudflare-worker": {Provider: "cloudflare"},
 		},
-		shapes: []string{"dual", "single"},
+		Stacks: map[types.Stack]types.Spec{
+			"astro":          {Architectures: []types.Architecture{"cloudflare-pages"}},
+			"go-service":     {Architectures: []types.Architecture{"aws-ecs"}},
+			"nextjs":         {Architectures: []types.Architecture{"cloudflare-worker"}},
+			"node-puppeteer": {Architectures: []types.Architecture{"aws-ecs"}},
+		},
 	}
-	m.load()
-	return m
-}
-
-func drive(t *testing.T, m model, keys ...tea.KeyMsg) model {
-	t.Helper()
-	for _, k := range keys {
-		next, _ := m.Update(k)
-		m = next.(model)
-	}
-	return m
 }
 
 var (
 	enter = tea.KeyMsg{Type: tea.KeyEnter}
 	down  = tea.KeyMsg{Type: tea.KeyDown}
+	esc   = tea.KeyMsg{Type: tea.KeyEsc}
+	ctrlC = tea.KeyMsg{Type: tea.KeyCtrlC}
 )
 
-func TestWaterfallFilters(t *testing.T) {
-	m := drive(t, testModel(), enter, down, enter)
-	if want := []string{"cloudflare-pages", "cloudflare-worker"}; !slices.Equal(m.options, want) {
-		t.Fatalf("architecture options for cloudflare = %v, want %v", m.options, want)
+func drive(t *testing.T, m tea.Model, msgs ...tea.Msg) tea.Model {
+	t.Helper()
+	queue := append([]tea.Msg(nil), msgs...)
+	for len(queue) > 0 {
+		msg := queue[0]
+		queue = queue[1:]
+		var cmd tea.Cmd
+		m, cmd = m.Update(msg)
+		queue = append(queue, collect(cmd)...)
 	}
+	return m
+}
+
+func collect(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if msg == nil {
+		return nil
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var out []tea.Msg
+		for _, c := range batch {
+			out = append(out, collect(c)...)
+		}
+		return out
+	}
+	if _, ok := msg.(tea.QuitMsg); ok {
+		return nil
+	}
+	return []tea.Msg{msg}
+}
+
+func start(t *testing.T) tea.Model {
+	t.Helper()
+	m := New("../..", testManifest(), []string{"dual", "single"}, render.Answers{}, false)
+	var model tea.Model = m
+	queue := collect(m.Init())
+	model = drive(t, model, queue...)
+	return drive(t, model, tea.WindowSizeMsg{Width: 100, Height: 30})
+}
+
+func TestArchitectureFiltersByProvider(t *testing.T) {
+	m := start(t)
 	m = drive(t, m, down, enter)
-	if want := []string{"nextjs"}; !slices.Equal(m.options, want) {
-		t.Fatalf("stack options for cloudflare-worker = %v, want %v", m.options, want)
+	view := m.View()
+	if strings.Contains(view, "aws-ecs") {
+		t.Fatalf("architecture list not filtered for cloudflare:\n%s", view)
 	}
-	m = drive(t, m, enter)
-	if m.step != stepDone {
-		t.Fatalf("step = %v, want stepDone", m.step)
-	}
-	want := Selection{Environments: "dual", Provider: "cloudflare", Architecture: "cloudflare-worker", Stack: "nextjs"}
-	if m.sel != want {
-		t.Fatalf("selection = %+v, want %+v", m.sel, want)
+	if !strings.Contains(view, "cloudflare-pages") || !strings.Contains(view, "cloudflare-worker") {
+		t.Fatalf("cloudflare architectures missing:\n%s", view)
 	}
 }
 
-func TestFirstOptionDefaults(t *testing.T) {
-	m := drive(t, testModel(), enter, enter, enter, enter)
-	want := Selection{Environments: "dual", Provider: "aws", Architecture: "aws-ecs", Stack: "go-service"}
-	if m.sel != want {
-		t.Fatalf("selection = %+v, want %+v", m.sel, want)
+func TestFullSelection(t *testing.T) {
+	m := start(t)
+	for _, msg := range []tea.Msg{down, enter, down, enter, enter, enter} {
+		m = drive(t, m, msg)
+	}
+	w := m.(*Model)
+	if w.Answers.Provider != "cloudflare" || w.Answers.Architecture != "cloudflare-worker" ||
+		w.Answers.Stack != "nextjs" || w.Answers.Environments != "dual" {
+		t.Fatalf("answers = %+v", w.Answers)
+	}
+	if w.Page() == pageArchitecture {
+		t.Fatal("page did not advance after completing selection")
 	}
 }
 
-func TestSidebarTracksAnswers(t *testing.T) {
-	m := drive(t, testModel(), enter, down, enter)
-	m.width, m.height = 80, 24
-	side := m.sidebar()
-	for _, want := range []string{"Environments", "dual", "cloudflare", "Architecture", "Stack"} {
-		if !strings.Contains(side, want) {
-			t.Fatalf("sidebar missing %q:\n%s", want, side)
+func TestStatusPanelTracksAnswers(t *testing.T) {
+	m := drive(t, start(t), down, enter)
+	view := m.View()
+	for _, want := range []string{"odyssey", "cloudflare"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("status panel missing %q:\n%s", want, view)
 		}
 	}
-	view := m.View()
-	if !strings.Contains(view, "│") {
-		t.Fatalf("view has no sidebar border:\n%s", view)
-	}
-	if !strings.Contains(view, "cloudflare-pages") {
-		t.Fatalf("view missing current options:\n%s", view)
-	}
 }
 
-func TestAbort(t *testing.T) {
-	m := drive(t, testModel(), enter, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	if !m.aborted {
-		t.Fatal("q did not abort")
+func TestCtrlCAborts(t *testing.T) {
+	m := drive(t, start(t), ctrlC)
+	if !m.(*Model).Aborted() {
+		t.Fatal("ctrl+c did not abort")
 	}
 }
