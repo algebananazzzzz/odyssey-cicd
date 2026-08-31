@@ -17,7 +17,7 @@ Scaffold only. Nothing updates a project after creation.
 | 2 | Makefiles + infra files, Terraform tied to the Makefile | infra done |
 | 3 | Fragments: manifest schema, how they link and validate | drafted |
 | 4 | Stacks: use-case fragments (nextjs, astro, node-puppeteer, go-service) | poc |
-| 5 | odyssey-cli: Go generator (Bubble Tea TUI + headless flags) | wizard poc |
+| 5 | odyssey-cli: Go generator (Bubble Tea TUI + headless flags) | done |
 
 ## Session 1, settled
 
@@ -112,9 +112,11 @@ pass showing no Terraform or AWS residue survives marker deletion.
 | templates source | tarball of this repo's `main`, fetched and cached (`~/.cache/odyssey/`); `--templates <dir>` overrides for local dev |
 | release channel | `main` — so this repo's CI validating fragments is load-bearing |
 | flow | waterfall wizard (environments, provider, architecture, stack) → rendered-plan preview → confirm → write |
-| headless | flags mirror the wizard; `--yes` skips the preview |
 | bootstrap | a stack fragment may declare a bootstrap section (commands + intent). `--bootstrap` runs it; the default prints it as a continuation prompt to take elsewhere |
-| wizard | hand-rolled Bubble Tea model, one question per screen: waterfall selects, architecture filtered by provider, stack by architecture, options computed synchronously per step; environment shapes listed from `workflows/deploy/`. `huh` rejected: grouped layout and racy async options. `odyssey-cli new` validates then runs it; selection only, render next |
+| engine | internal/render with in-memory Plan; render.Build + Plan.Apply(events) the only filesystem path; per-env expansion of {{ENV}} files; asks discovered by scanning the unsubstituted plan |
+| wizard | five pages (architecture, project, variables, plan, apply) as one parent Bubble Tea model embedding a fresh huh form per page; huh un-rejected because parent owns layout and options resolve synchronously from in-memory manifest; select order provider, architecture, stack, environments (environments filters nothing); esc back, ctrl+c abort, inline (no altscreen) |
+| headless | TTY detection on stdin+stdout; flags mirror pages; unique upstream axes derived (never guessed); teaching output on incomplete (exit 2); plan-only without --yes; --yes applies with per-unit log lines; gh-runnable checklist printed after |
+| find | stack-first denormalized rows; bare-term substring and axis=value filters; single match renders detail card with ready-to-edit new invocation |
 | charm stack | `huh` forms on Bubble Tea, `lipgloss` styling |
 
 
