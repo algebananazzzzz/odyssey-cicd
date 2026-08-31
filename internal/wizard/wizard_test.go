@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/algebananazzzzz/odyssey/internal/render"
@@ -12,11 +13,17 @@ import (
 
 func testManifest() *types.Manifest {
 	return &types.Manifest{
+		Inputs: map[string]types.Input{
+			"PREPROD_URL": {Optional: true},
+			"PRD_URL":     {Optional: true},
+		},
 		Providers: map[types.Provider]types.Spec{"aws": {}, "cloudflare": {}},
 		Architectures: map[types.Architecture]types.Spec{
-			"aws-ecs":           {Provider: "aws"},
-			"cloudflare-pages":  {Provider: "cloudflare"},
-			"cloudflare-worker": {Provider: "cloudflare"},
+			"aws-ecs":          {Provider: "aws"},
+			"cloudflare-pages": {Provider: "cloudflare"},
+			"cloudflare-worker": {Provider: "cloudflare", Inputs: map[string]types.Input{
+				"CUSTOM_DOMAIN": {Optional: true},
+			}},
 		},
 		Stacks: map[types.Stack]types.Spec{
 			"astro":          {Architectures: []types.Architecture{"cloudflare-pages"}},
@@ -63,6 +70,9 @@ func collect(cmd tea.Cmd) []tea.Msg {
 		return out
 	}
 	if _, ok := msg.(tea.QuitMsg); ok {
+		return nil
+	}
+	if _, ok := msg.(cursor.BlinkMsg); ok {
 		return nil
 	}
 	return []tea.Msg{msg}
@@ -118,5 +128,83 @@ func TestCtrlCAborts(t *testing.T) {
 	m := drive(t, start(t), ctrlC)
 	if !m.(*Model).Aborted() {
 		t.Fatal("ctrl+c did not abort")
+	}
+}
+
+func typeString(s string) []tea.Msg {
+	var msgs []tea.Msg
+	for _, r := range s {
+		msgs = append(msgs, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	return msgs
+}
+
+func selectAll(t *testing.T) tea.Model {
+	m := start(t)
+	for _, msg := range []tea.Msg{down, enter, down, enter, enter, enter} {
+		m = drive(t, m, msg)
+	}
+	return m
+}
+
+func TestProjectPage(t *testing.T) {
+	m := selectAll(t)
+	if m.(*Model).Page() != pageProject {
+		t.Fatalf("page = %v, want pageProject", m.(*Model).Page())
+	}
+	m = drive(t, m, typeString("acme-web")...)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	w := m.(*Model)
+	if w.Answers.Project != "acme-web" {
+		t.Fatalf("project = %q", w.Answers.Project)
+	}
+	if w.Answers.Dir != "./acme-web" {
+		t.Fatalf("dir = %q", w.Answers.Dir)
+	}
+}
+
+func TestProjectCodeValidation(t *testing.T) {
+	if err := validProject("Acme Web"); err == nil {
+		t.Fatal("bad project code accepted")
+	}
+	if err := validProject("acme-web2"); err != nil {
+		t.Fatalf("good project code rejected: %v", err)
+	}
+}
+
+func TestVariablesScreens(t *testing.T) {
+	m := selectAll(t)
+	m = drive(t, m, typeString("acme-web")...)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	w := m.(*Model)
+	if w.Page() != pageVariables {
+		t.Fatalf("page = %v, want pageVariables", w.Page())
+	}
+	view := m.View()
+	for _, want := range []string{"CUSTOM_DOMAIN", "PREPROD_URL", "PRD_URL"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("variables screen missing %q:\n%s", want, view)
+		}
+	}
+	m = drive(t, m, typeString("pre.example.com")...)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	w = m.(*Model)
+	if w.Page() != pageVariables || w.varScreen != 1 {
+		t.Fatalf("expected second env screen, page=%v screen=%d", w.Page(), w.varScreen)
+	}
+	if got := *w.varVals["prd"]["CUSTOM_DOMAIN"]; got != "pre.example.com" {
+		t.Fatalf("prd not prefilled from preprod, got %q", got)
+	}
+	m = drive(t, m, enter)
+	w = m.(*Model)
+	if w.Page() != pagePlan {
+		t.Fatalf("page after variables = %v, want pagePlan", w.Page())
+	}
+	if w.Answers.Vars["preprod"]["CUSTOM_DOMAIN"] != "pre.example.com" {
+		t.Fatalf("vars not harvested: %v", w.Answers.Vars)
 	}
 }
