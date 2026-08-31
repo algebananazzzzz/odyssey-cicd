@@ -249,6 +249,3 @@ func (r *renderer) workflows() error {
 	return nil
 }
 
-func (r *renderer) compose(m *types.Manifest) error {
-	return nil
-}
