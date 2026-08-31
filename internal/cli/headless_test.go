@@ -90,3 +90,18 @@ func TestReport(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingFiltersStacksByProvider(t *testing.T) {
+	missing := Missing(manifest(t), []string{"dual", "single"}, render.Answers{Provider: "aws"})
+	for _, c := range missing {
+		if c.Flag != "--stack" {
+			continue
+		}
+		want := []string{"go-service", "node-puppeteer"}
+		if len(c.Options) != len(want) || c.Options[0] != want[0] || c.Options[1] != want[1] {
+			t.Fatalf("--stack options = %v, want %v", c.Options, want)
+		}
+		return
+	}
+	t.Fatal("no --stack choice in missing")
+}

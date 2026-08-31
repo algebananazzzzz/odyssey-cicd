@@ -100,6 +100,9 @@ func Missing(m *types.Manifest, shapes []string, a render.Answers) []Choice {
 		if a.Stack != "" {
 			opts = nil
 			for _, arch := range m.Stacks[types.Stack(a.Stack)].Architectures {
+				if a.Provider != "" && m.Architectures[arch].Provider != types.Provider(a.Provider) {
+					continue
+				}
 				opts = append(opts, string(arch))
 			}
 			sort.Strings(opts)
@@ -109,7 +112,18 @@ func Missing(m *types.Manifest, shapes []string, a render.Answers) []Choice {
 	if a.Stack == "" {
 		var opts []string
 		for _, s := range utils.Sorted(m.Stacks) {
-			if a.Architecture == "" || slices.Contains(m.Stacks[s].Architectures, types.Architecture(a.Architecture)) {
+			valid := false
+			for _, arch := range m.Stacks[s].Architectures {
+				if a.Architecture != "" && arch != types.Architecture(a.Architecture) {
+					continue
+				}
+				if a.Provider != "" && m.Architectures[arch].Provider != types.Provider(a.Provider) {
+					continue
+				}
+				valid = true
+				break
+			}
+			if valid {
 				opts = append(opts, string(s))
 			}
 		}
