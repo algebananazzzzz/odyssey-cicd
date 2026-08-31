@@ -1,7 +1,3 @@
-inputs:
-  PREPROD_URL: {optional: true}
-  PRD_URL: {optional: true}
-
 providers:
   cloudflare:
     github:
@@ -19,6 +15,8 @@ architectures:
       CUSTOM_DOMAIN: {optional: true}
   cloudflare-pages:
     provider: cloudflare
+    inputs:
+      CUSTOM_DOMAIN: {optional: true}
   aws-ecs:
     provider: aws
 

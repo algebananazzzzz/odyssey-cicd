@@ -6,21 +6,21 @@ import (
 
 	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
+	"github.com/algebananazzzzz/odyssey/internal/cli"
 	"github.com/algebananazzzzz/odyssey/internal/render"
 	"github.com/algebananazzzzz/odyssey/internal/types"
 )
 
 func testManifest() *types.Manifest {
 	return &types.Manifest{
-		Inputs: map[string]types.Input{
-			"PREPROD_URL": {Optional: true},
-			"PRD_URL":     {Optional: true},
-		},
 		Providers: map[types.Provider]types.Spec{"aws": {}, "cloudflare": {}},
 		Architectures: map[types.Architecture]types.Spec{
-			"aws-ecs":          {Provider: "aws"},
-			"cloudflare-pages": {Provider: "cloudflare"},
+			"aws-ecs": {Provider: "aws"},
+			"cloudflare-pages": {Provider: "cloudflare", Inputs: map[string]types.Input{
+				"CUSTOM_DOMAIN": {Optional: true},
+			}},
 			"cloudflare-worker": {Provider: "cloudflare", Inputs: map[string]types.Input{
 				"CUSTOM_DOMAIN": {Optional: true},
 			}},
@@ -88,6 +88,41 @@ func start(t *testing.T) tea.Model {
 	return drive(t, model, tea.WindowSizeMsg{Width: 100, Height: 30})
 }
 
+func TestViewMatchesExampleLayout(t *testing.T) {
+	m := start(t)
+	view := m.View()
+	if !strings.Contains(view, "Odyssey Project Wizard") {
+		t.Fatalf("header title missing:\n%s", view)
+	}
+	if !strings.Contains(view, "////") {
+		t.Fatalf("header boundary fill missing:\n%s", view)
+	}
+	if !strings.Contains(view, "enter") {
+		t.Fatalf("footer help missing:\n%s", view)
+	}
+	if got := lipgloss.Width(view); got != 100 {
+		t.Fatalf("view width = %d, want the full 100-column window:\n%s", got, view)
+	}
+	if got := lipgloss.Height(view); got != 30 {
+		t.Fatalf("view height = %d, want the full 30-row screen:\n%s", got, view)
+	}
+	for _, want := range []string{"Provider", "Architecture", "Stack", "Environments"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("question %q not visible:\n%s", want, view)
+		}
+	}
+	if got := lipgloss.Height(m.(*Model).form.View()); got < 20 {
+		t.Fatalf("form height = %d, not filling the 30-row screen", got)
+	}
+	wide := drive(t, m, tea.WindowSizeMsg{Width: 200, Height: 50})
+	if got := lipgloss.Width(wide.View()); got != maxWidth {
+		t.Fatalf("view width = %d on a 200-column window, want capped at %d", got, maxWidth)
+	}
+	if got := lipgloss.Height(wide.View()); got != 50 {
+		t.Fatalf("view height = %d after resize, want 50", got)
+	}
+}
+
 func TestArchitectureFiltersByProvider(t *testing.T) {
 	m := start(t)
 	m = drive(t, m, down, enter)
@@ -122,6 +157,13 @@ func TestStatusPanelTracksAnswers(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("status panel missing %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestStatusPanelHidesWhenNarrow(t *testing.T) {
+	m := drive(t, start(t), tea.WindowSizeMsg{Width: 75, Height: 20})
+	if strings.Contains(m.View(), "odyssey") {
+		t.Fatalf("status panel should hide when it cannot fit:\n%s", m.View())
 	}
 }
 
@@ -166,10 +208,10 @@ func TestProjectPage(t *testing.T) {
 }
 
 func TestProjectCodeValidation(t *testing.T) {
-	if err := validProject("Acme Web"); err == nil {
+	if err := cli.ValidProject("Acme Web"); err == nil {
 		t.Fatal("bad project code accepted")
 	}
-	if err := validProject("acme-web2"); err != nil {
+	if err := cli.ValidProject("acme-web2"); err != nil {
 		t.Fatalf("good project code rejected: %v", err)
 	}
 }
@@ -184,21 +226,22 @@ func TestVariablesScreens(t *testing.T) {
 		t.Fatalf("page = %v, want pageVariables", w.Page())
 	}
 	view := m.View()
-	for _, want := range []string{"CUSTOM_DOMAIN", "PREPROD_URL", "PRD_URL"} {
+	for _, want := range []string{"CUSTOM_DOMAIN", "./acme-web"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("variables screen missing %q:\n%s", want, view)
 		}
 	}
+	if strings.Contains(view, "_URL") {
+		t.Fatalf("variables screen still asks for a URL:\n%s", view)
+	}
 	m = drive(t, m, typeString("pre.example.com")...)
-	m = drive(t, m, enter)
-	m = drive(t, m, enter)
 	m = drive(t, m, enter)
 	w = m.(*Model)
 	if w.Page() != pageVariables || w.varScreen != 1 {
 		t.Fatalf("expected second env screen, page=%v screen=%d", w.Page(), w.varScreen)
 	}
-	if got := *w.varVals["prd"]["CUSTOM_DOMAIN"]; got != "pre.example.com" {
-		t.Fatalf("prd not prefilled from preprod, got %q", got)
+	if got := *w.varVals["prd"]["CUSTOM_DOMAIN"]; got != "" {
+		t.Fatalf("prd should start blank, not copy preprod, got %q", got)
 	}
 	m = drive(t, m, enter)
 	w = m.(*Model)
@@ -208,6 +251,9 @@ func TestVariablesScreens(t *testing.T) {
 	if w.Answers.Vars["preprod"]["CUSTOM_DOMAIN"] != "pre.example.com" {
 		t.Fatalf("vars not harvested: %v", w.Answers.Vars)
 	}
+	if w.Answers.Vars["prd"]["CUSTOM_DOMAIN"] != "" {
+		t.Fatalf("prd should stay empty, got %q", w.Answers.Vars["prd"]["CUSTOM_DOMAIN"])
+	}
 }
 
 func TestPlanPageAndConfirm(t *testing.T) {
@@ -216,8 +262,6 @@ func TestPlanPageAndConfirm(t *testing.T) {
 	m = drive(t, m, enter)
 	m = drive(t, m, enter)
 	m = drive(t, m, typeString("pre.example.com")...)
-	m = drive(t, m, enter)
-	m = drive(t, m, enter)
 	m = drive(t, m, enter)
 	m = drive(t, m, enter)
 	w := m.(*Model)
@@ -232,6 +276,31 @@ func TestPlanPageAndConfirm(t *testing.T) {
 	m = drive(t, m, enter)
 	if !m.(*Model).Aborted() {
 		t.Fatal("answering No did not abort")
+	}
+}
+
+func TestEscFromPlanReturnsToVariables(t *testing.T) {
+	m := selectAll(t)
+	m = drive(t, m, typeString("acme-web")...)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	m = drive(t, m, typeString("pre.example.com")...)
+	m = drive(t, m, enter)
+	m = drive(t, m, enter)
+	w := m.(*Model)
+	if w.Page() != pagePlan {
+		t.Fatalf("page = %v, want pagePlan", w.Page())
+	}
+	m = drive(t, m, esc)
+	w = m.(*Model)
+	if w.Page() != pageVariables {
+		t.Fatalf("page after esc = %v, want pageVariables", w.Page())
+	}
+	if w.varScreen != 0 {
+		t.Fatalf("varScreen after esc = %d, want 0", w.varScreen)
+	}
+	if got := *w.varVals["preprod"]["CUSTOM_DOMAIN"]; got != "pre.example.com" {
+		t.Fatalf("preprod CUSTOM_DOMAIN not carried over, got %q", got)
 	}
 }
 

@@ -76,3 +76,11 @@ func TestTree(t *testing.T) {
 		}
 	}
 }
+
+func TestTreeSingularFile(t *testing.T) {
+	p := &Plan{Files: []File{{Path: "AGENTS.md"}}}
+	tree := p.Tree()
+	if !strings.Contains(tree, "1 file\n") || strings.Contains(tree, "1 files") {
+		t.Fatalf("tree = %q", tree)
+	}
+}

@@ -84,12 +84,19 @@ func (p *Plan) Tree() string {
 	sort.Strings(keys)
 	sort.Strings(singles)
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d files\n", len(p.Files))
+	fmt.Fprintf(&b, "%d %s\n", len(p.Files), plural(len(p.Files)))
 	for _, k := range keys {
-		fmt.Fprintf(&b, "  %-22s %d files\n", k, groups[k])
+		fmt.Fprintf(&b, "  %-22s %d %s\n", k, groups[k], plural(groups[k]))
 	}
 	for _, s := range singles {
 		fmt.Fprintf(&b, "  %s\n", s)
 	}
 	return b.String()
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return "file"
+	}
+	return "files"
 }

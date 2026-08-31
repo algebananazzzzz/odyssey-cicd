@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -13,6 +14,15 @@ import (
 )
 
 var varName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+
+var projectRe = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+func ValidProject(s string) error {
+	if !projectRe.MatchString(s) {
+		return errors.New("lowercase letters, digits and hyphens, starting with a letter")
+	}
+	return nil
+}
 
 func ParseVars(pairs, envs []string) (map[string]map[string]string, error) {
 	vars := map[string]map[string]string{}
@@ -42,6 +52,11 @@ func ParseVars(pairs, envs []string) (map[string]map[string]string, error) {
 }
 
 func Infer(m *types.Manifest, a *render.Answers) error {
+	if a.Provider != "" {
+		if _, ok := m.Providers[types.Provider(a.Provider)]; !ok {
+			return fmt.Errorf("unknown provider %q", a.Provider)
+		}
+	}
 	if a.Stack != "" && a.Architecture == "" {
 		spec, ok := m.Stacks[types.Stack(a.Stack)]
 		if !ok {

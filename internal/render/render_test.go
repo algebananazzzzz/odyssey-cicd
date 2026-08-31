@@ -14,8 +14,8 @@ func answers() Answers {
 		Provider: "cloudflare", Architecture: "cloudflare-worker",
 		Stack: "nextjs", Environments: "dual", Project: "acme-web", Dir: "./acme-web",
 		Vars: map[string]map[string]string{
-			"preprod": {"PREPROD_URL": "https://pre.example.com", "PRD_URL": "https://example.com", "CUSTOM_DOMAIN": "pre.example.com"},
-			"prd":     {"PREPROD_URL": "https://pre.example.com", "PRD_URL": "https://example.com", "CUSTOM_DOMAIN": "example.com"},
+			"preprod": {"CUSTOM_DOMAIN": "pre.example.com"},
+			"prd":     {"CUSTOM_DOMAIN": "example.com"},
 		},
 	}
 }

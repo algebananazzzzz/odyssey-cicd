@@ -1,8 +1,5 @@
 name: Deploy (prd)
 
-# Run this against a vX.Y.Z tag. Dispatch it from the tag ref; the validate step
-# rejects anything else, so a branch never reaches prd.
-
 on:
   workflow_dispatch:
   push:
@@ -30,7 +27,6 @@ jobs:
 
     environment:
       name: "{{PRD_ENV}}"
-      url: "{{PRD_URL}}"
 
     env:
       TAG: ${{ github.ref_name }}

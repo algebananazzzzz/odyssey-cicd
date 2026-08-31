@@ -11,9 +11,9 @@ func TestMakefileOrder(t *testing.T) {
 	if mk.Unit != "makefile" {
 		t.Fatalf("Makefile unit = %q", mk.Unit)
 	}
-	iBase := strings.Index(mk.Body, "task runner")
+	iBase := strings.Index(mk.Body, ".DEFAULT_GOAL")
 	iStack := strings.Index(mk.Body, "npm run build")
-	iDeploy := strings.Index(mk.Body, "wrangler")
+	iDeploy := strings.Index(mk.Body, "opennextjs-cloudflare")
 	iInfra := strings.Index(mk.Body, "infra-init")
 	if iBase == -1 || iStack == -1 || iDeploy == -1 || iInfra == -1 {
 		t.Fatalf("missing sections: base=%d stack=%d deploy=%d infra=%d\n%s", iBase, iStack, iDeploy, iInfra, mk.Body)
@@ -91,5 +91,31 @@ func TestAwsStackFiles(t *testing.T) {
 	file(t, p, "taskdef.json")
 	if f := file(t, p, "scripts/deploy-ecs.sh"); f.Mode != 0o755 {
 		t.Fatalf("deploy-ecs.sh mode = %o", f.Mode)
+	}
+}
+
+func TestPagesCustomDomain(t *testing.T) {
+	a := answers()
+	a.Architecture, a.Stack = "cloudflare-pages", "astro"
+	p := testBuild(t, a)
+	for _, path := range []string{"infra/pages.tf", "infra/domain.tf"} {
+		if f := file(t, p, path); f.Unit != "infra" {
+			t.Fatalf("%s unit = %q", path, f.Unit)
+		}
+	}
+	prd := file(t, p, "infra/config/prd.tfvars")
+	if !strings.Contains(prd.Body, `custom_domain      = "example.com"`) {
+		t.Fatalf("prd custom_domain not substituted:\n%s", prd.Body)
+	}
+	if !strings.Contains(prd.Body, `pages_project_name = "prd-web-pages-acme-web"`) {
+		t.Fatalf("prd pages_project_name wrong:\n%s", prd.Body)
+	}
+	pre := file(t, p, "infra/config/preprod.tfvars")
+	if !strings.Contains(pre.Body, `custom_domain      = "pre.example.com"`) {
+		t.Fatalf("preprod custom_domain not substituted:\n%s", pre.Body)
+	}
+	mk := file(t, p, "Makefile")
+	if !strings.Contains(mk.Body, "--project-name=$(ENV)-web-pages-acme-web --branch=main") {
+		t.Fatalf("pages deploy does not target the terraform project as production:\n%s", mk.Body)
 	}
 }

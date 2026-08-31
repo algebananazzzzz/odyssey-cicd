@@ -28,6 +28,13 @@ func TestInferFromStack(t *testing.T) {
 	}
 }
 
+func TestInferUnknownProvider(t *testing.T) {
+	a := render.Answers{Provider: "bogus"}
+	if err := Infer(manifest(t), &a); err == nil {
+		t.Fatal("unknown provider accepted")
+	}
+}
+
 func TestInferConflict(t *testing.T) {
 	a := render.Answers{Stack: "nextjs", Provider: "aws"}
 	if err := Infer(manifest(t), &a); err == nil {
@@ -72,8 +79,6 @@ func TestReport(t *testing.T) {
 	missing := Missing(m, []string{"dual", "single"}, a)
 	asks := []render.Ask{
 		{Name: "CUSTOM_DOMAIN", Optional: true, PerEnv: true},
-		{Name: "PRD_URL", Optional: true},
-		{Name: "PREPROD_URL", Optional: true},
 	}
 	out := Report(a, map[string]bool{"architecture": true, "provider": true}, missing, asks)
 	for _, want := range []string{
@@ -88,6 +93,15 @@ func TestReport(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("report missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestValidProject(t *testing.T) {
+	if err := ValidProject("Bad Name"); err == nil {
+		t.Fatal("bad project code accepted")
+	}
+	if err := ValidProject("acme-web2"); err != nil {
+		t.Fatalf("good project code rejected: %v", err)
 	}
 }
 

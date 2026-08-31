@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
+	"sort"
+	"strings"
 
 	"github.com/mattn/go-isatty"
 
@@ -100,12 +103,25 @@ func runHeadless(templates string, m *types.Manifest, shapes []string, a render.
 	derived["architecture"] = before.Architecture == "" && a.Architecture != ""
 	derived["provider"] = before.Provider == "" && a.Provider != ""
 
+	if a.Project != "" {
+		if err := cli.ValidProject(a.Project); err != nil {
+			fatal(err)
+		}
+	}
+	if a.Environments != "" && !slices.Contains(shapes, a.Environments) {
+		fatal(fmt.Errorf("unknown environments shape %q, valid: %s", a.Environments, strings.Join(shapes, ", ")))
+	}
+
 	missing := cli.Missing(m, shapes, a)
 	if len(missing) > 0 {
 		if a.Stack == "" && a.Architecture == "" && a.Provider == "" && a.Project == "" {
 			fmt.Println("run `odyssey-cli find` to browse stacks, architectures and providers")
 		}
-		fmt.Print(cli.Report(a, derived, missing, nil))
+		var asks []render.Ask
+		if a.Provider != "" && a.Architecture != "" && a.Stack != "" && a.Environments == "" {
+			asks = unionAsks(templates, m, a, shapes)
+		}
+		fmt.Print(cli.Report(a, derived, missing, asks))
 		os.Exit(2)
 	}
 	scan, err := render.Build(templates, m, a)
@@ -143,6 +159,33 @@ func runHeadless(templates string, m *types.Manifest, shapes []string, a render.
 	finish(templates, m, a, yes, bootstrap)
 }
 
+func unionAsks(templates string, m *types.Manifest, a render.Answers, shapes []string) []render.Ask {
+	byName := map[string]render.Ask{}
+	for _, shape := range shapes {
+		a2 := a
+		a2.Environments = shape
+		scan, err := render.Build(templates, m, a2)
+		if err != nil {
+			continue
+		}
+		for _, ask := range render.Asks(m, scan) {
+			existing, ok := byName[ask.Name]
+			if !ok {
+				byName[ask.Name] = ask
+				continue
+			}
+			existing.PerEnv = existing.PerEnv || ask.PerEnv
+			byName[ask.Name] = existing
+		}
+	}
+	asks := make([]render.Ask, 0, len(byName))
+	for _, ask := range byName {
+		asks = append(asks, ask)
+	}
+	sort.Slice(asks, func(i, j int) bool { return asks[i].Name < asks[j].Name })
+	return asks
+}
+
 func finish(templates string, m *types.Manifest, a render.Answers, yes, bootstrap bool) {
 	if a.Dir == "" {
 		a.Dir = "./" + a.Project
@@ -167,6 +210,7 @@ func finish(templates string, m *types.Manifest, a render.Answers, yes, bootstra
 	}
 	if err := <-done; err != nil {
 		fmt.Printf("✗ %v\n", err)
+		fmt.Printf("the directory %s is incomplete; delete it before retrying\n", a.Dir)
 		os.Exit(1)
 	}
 	fmt.Println()

@@ -18,8 +18,6 @@ func TestAsksForNextjs(t *testing.T) {
 	asks := Asks(m, p)
 	want := []Ask{
 		{Name: "CUSTOM_DOMAIN", Optional: true, PerEnv: true},
-		{Name: "PRD_URL", Optional: true},
-		{Name: "PREPROD_URL", Optional: true},
 	}
 	if len(asks) != len(want) {
 		t.Fatalf("asks = %+v, want %+v", asks, want)

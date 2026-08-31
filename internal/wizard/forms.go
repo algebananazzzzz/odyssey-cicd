@@ -3,10 +3,10 @@ package wizard
 import (
 	"errors"
 	"fmt"
-	"regexp"
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/algebananazzzzz/odyssey/internal/cli"
 	"github.com/algebananazzzzz/odyssey/internal/render"
 	"github.com/algebananazzzzz/odyssey/internal/types"
 	"github.com/algebananazzzzz/odyssey/internal/utils"
@@ -25,6 +25,7 @@ func architectureForm(m *types.Manifest, shapes []string, a *render.Answers) *hu
 		huh.NewSelect[string]().Key("provider").Title("Provider").
 			Options(options(utils.Sorted(m.Providers))...).Value(&a.Provider),
 		huh.NewSelect[string]().Key("architecture").Title("Architecture").
+			Height(1+maxArchsPerProvider(m)).
 			OptionsFunc(func() []huh.Option[string] {
 				var archs []types.Architecture
 				for _, arch := range utils.Sorted(m.Architectures) {
@@ -35,6 +36,7 @@ func architectureForm(m *types.Manifest, shapes []string, a *render.Answers) *hu
 				return options(archs)
 			}, &a.Provider).Value(&a.Architecture),
 		huh.NewSelect[string]().Key("stack").Title("Stack").
+			Height(1+maxStacksPerArchitecture(m)).
 			OptionsFunc(func() []huh.Option[string] {
 				var stacks []types.Stack
 				for _, s := range utils.Sorted(m.Stacks) {
@@ -48,31 +50,44 @@ func architectureForm(m *types.Manifest, shapes []string, a *render.Answers) *hu
 			}, &a.Architecture).Value(&a.Stack),
 		huh.NewSelect[string]().Key("environments").Title("Environments").
 			Options(options(shapes)...).Value(&a.Environments),
-	)).WithTheme(theme())
+	)).WithWidth(formWidth).WithShowHelp(false).WithShowErrors(false)
 }
 
-var projectRe = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-
-func validProject(s string) error {
-	if !projectRe.MatchString(s) {
-		return errors.New("lowercase letters, digits and hyphens, starting with a letter")
+func maxArchsPerProvider(m *types.Manifest) int {
+	counts := map[types.Provider]int{}
+	most := 1
+	for _, spec := range m.Architectures {
+		counts[spec.Provider]++
+		most = max(most, counts[spec.Provider])
 	}
-	return nil
+	return most
+}
+
+func maxStacksPerArchitecture(m *types.Manifest) int {
+	counts := map[types.Architecture]int{}
+	most := 1
+	for _, spec := range m.Stacks {
+		for _, arch := range spec.Architectures {
+			counts[arch]++
+			most = max(most, counts[arch])
+		}
+	}
+	return most
 }
 
 func projectForm(a *render.Answers) *huh.Form {
 	return huh.NewForm(huh.NewGroup(
 		huh.NewInput().Key("project").Title("Project code").
-			Validate(validProject).Value(&a.Project),
+			Validate(cli.ValidProject).Value(&a.Project),
 		huh.NewInput().Key("dir").Title("Directory").
-			Placeholder("./<project code>").
+			PlaceholderFunc(func() string { return "./" + a.Project }, &a.Project).
 			Validate(func(dir string) error {
 				if dir == "" {
 					return nil
 				}
 				return render.TargetOK(dir)
 			}).Value(&a.Dir),
-	)).WithTheme(theme())
+	)).WithWidth(formWidth).WithShowHelp(false).WithShowErrors(false)
 }
 
 func variablesForm(asks []render.Ask, envs []string, screen int, vals map[string]map[string]*string) *huh.Form {
@@ -92,7 +107,7 @@ func variablesForm(asks []render.Ask, envs []string, screen int, vals map[string
 		fields = append(fields, huh.NewInput().Key(ask.Name).Title(title).
 			Validate(requiredUnless(ask.Optional)).Value(vals[env][ask.Name]))
 	}
-	return huh.NewForm(huh.NewGroup(fields...)).WithTheme(theme())
+	return huh.NewForm(huh.NewGroup(fields...)).WithWidth(formWidth).WithShowHelp(false).WithShowErrors(false)
 }
 
 func confirmForm(n int, dir string, ok *bool) *huh.Form {
@@ -100,7 +115,7 @@ func confirmForm(n int, dir string, ok *bool) *huh.Form {
 		huh.NewConfirm().Key("write").
 			Title(fmt.Sprintf("Write %d files to %s?", n, dir)).
 			Affirmative("Yes").Negative("No").Value(ok),
-	)).WithTheme(theme())
+	)).WithWidth(formWidth).WithShowHelp(false).WithShowErrors(false)
 }
 
 func requiredUnless(optional bool) func(string) error {

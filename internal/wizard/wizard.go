@@ -39,6 +39,8 @@ type Model struct {
 	Answers render.Answers
 	aborted bool
 	err     error
+	lg      *lipgloss.Renderer
+	styles  *Styles
 	width   int
 	height  int
 	pending bool
@@ -63,11 +65,14 @@ func cliInfer(m *types.Manifest, a *render.Answers) error { return cli.Infer(m, 
 
 func New(templates string, m *types.Manifest, shapes []string, a render.Answers, yes bool) *Model {
 	w := &Model{templates: templates, manifest: m, shapes: shapes, Answers: a, yes: yes, flagPages: map[page]bool{}}
+	w.lg = lipgloss.DefaultRenderer()
+	w.styles = NewStyles(w.lg)
+	w.width = maxWidth
 	if err := cliInfer(m, &w.Answers); err == nil &&
 		a.Provider != "" && a.Architecture != "" && a.Stack != "" && a.Environments != "" {
 		w.flagPages[pageArchitecture] = true
 	}
-	if a.Project != "" && validProject(a.Project) == nil {
+	if a.Project != "" && cli.ValidProject(a.Project) == nil {
 		w.flagPages[pageProject] = true
 	}
 	switch {
@@ -104,23 +109,21 @@ func (w *Model) Init() tea.Cmd {
 func (w *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		w.width, w.height = msg.Width, msg.Height
+		w.width = min(msg.Width, maxWidth) - w.styles.Base.GetHorizontalFrameSize()
+		w.height = msg.Height
 		if w.form != nil {
-			w.form = w.form.WithWidth(w.width)
+			w.form = w.sized(w.form)
 		}
-		return w, nil
 	case stepMsg:
 		if msg.ok {
 			w.applied = append(w.applied, msg.step)
-			return w, tea.Batch(
-				tea.Printf("✓ %s (%d files)", msg.step.Unit, msg.step.Files),
-				w.nextStep(),
-			)
+			return w, w.nextStep()
 		}
-		if err := <-w.applyErr; err != nil {
-			w.fail(err)
-		}
+		err := <-w.applyErr
 		w.page = pageDone
+		if err != nil {
+			w.fail(fmt.Errorf("%w; the directory %s is incomplete, delete it before retrying", err, w.Answers.Dir))
+		}
 		return w, tea.Quit
 	case spinner.TickMsg:
 		if w.applying {
@@ -141,6 +144,13 @@ func (w *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return w.route(msg)
 }
 
+func (w *Model) sized(f *huh.Form) *huh.Form {
+	if w.height == 0 || w.page == pagePlan {
+		return f
+	}
+	return f.WithHeight(max(w.height-6, 5))
+}
+
 func (w *Model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if w.form == nil {
 		return w, nil
@@ -159,7 +169,7 @@ func (w *Model) advance() (tea.Model, tea.Cmd) {
 	switch w.page {
 	case pageArchitecture:
 		w.page = pageProject
-		w.form = projectForm(&w.Answers)
+		w.form = w.sized(projectForm(&w.Answers))
 		return w, w.form.Init()
 	case pageProject:
 		if w.Answers.Dir == "" {
@@ -170,8 +180,7 @@ func (w *Model) advance() (tea.Model, tea.Cmd) {
 		w.harvestScreen()
 		if w.varScreen+1 < len(w.envs) && w.hasPerEnv() {
 			w.varScreen++
-			w.prefill(w.varScreen)
-			w.form = variablesForm(w.asks, w.envs, w.varScreen, w.varVals)
+			w.form = w.sized(variablesForm(w.asks, w.envs, w.varScreen, w.varVals))
 			return w, w.form.Init()
 		}
 		return w.enterPlan()
@@ -196,6 +205,14 @@ func (w *Model) enterVariables() (tea.Model, tea.Cmd) {
 	if len(w.asks) == 0 {
 		return w.enterPlan()
 	}
+	w.buildVarVals()
+	w.page = pageVariables
+	w.varScreen = 0
+	w.form = w.sized(variablesForm(w.asks, w.envs, 0, w.varVals))
+	return w, w.form.Init()
+}
+
+func (w *Model) buildVarVals() {
 	w.varVals = map[string]map[string]*string{}
 	for _, env := range w.envs {
 		w.varVals[env] = map[string]*string{}
@@ -207,10 +224,6 @@ func (w *Model) enterVariables() (tea.Model, tea.Cmd) {
 			w.varVals[env][ask.Name] = &s
 		}
 	}
-	w.page = pageVariables
-	w.varScreen = 0
-	w.form = variablesForm(w.asks, w.envs, 0, w.varVals)
-	return w, w.form.Init()
 }
 
 func (w *Model) hasPerEnv() bool {
@@ -220,17 +233,6 @@ func (w *Model) hasPerEnv() bool {
 		}
 	}
 	return false
-}
-
-func (w *Model) prefill(screen int) {
-	first := w.envs[0]
-	env := w.envs[screen]
-	for _, ask := range w.asks {
-		if ask.PerEnv && *w.varVals[env][ask.Name] == "" {
-			v := *w.varVals[first][ask.Name]
-			w.varVals[env][ask.Name] = &v
-		}
-	}
 }
 
 func (w *Model) harvestScreen() {
@@ -321,14 +323,25 @@ func (w *Model) back() (tea.Model, tea.Cmd) {
 	case pageVariables:
 		if w.varScreen > 0 {
 			w.varScreen--
-			w.form = variablesForm(w.asks, w.envs, w.varScreen, w.varVals)
+			w.form = w.sized(variablesForm(w.asks, w.envs, w.varScreen, w.varVals))
 			return w, w.form.Init()
 		}
 		return w.backTo(pageProject)
 	case pagePlan:
-		return w.enterVariables()
+		if len(w.asks) > 0 {
+			return w.backToVariables()
+		}
+		return w.backTo(pageProject)
 	}
 	return w, nil
+}
+
+func (w *Model) backToVariables() (tea.Model, tea.Cmd) {
+	w.varScreen = 0
+	w.buildVarVals()
+	w.page = pageVariables
+	w.form = w.sized(variablesForm(w.asks, w.envs, 0, w.varVals))
+	return w, w.form.Init()
 }
 
 func (w *Model) backTo(target page) (tea.Model, tea.Cmd) {
@@ -338,11 +351,11 @@ func (w *Model) backTo(target page) (tea.Model, tea.Cmd) {
 	switch target {
 	case pageArchitecture:
 		w.page = pageArchitecture
-		w.form = architectureForm(w.manifest, w.shapes, &w.Answers)
+		w.form = w.sized(architectureForm(w.manifest, w.shapes, &w.Answers))
 		return w, w.form.Init()
 	case pageProject:
 		w.page = pageProject
-		w.form = projectForm(&w.Answers)
+		w.form = w.sized(projectForm(&w.Answers))
 		return w, w.form.Init()
 	}
 	w.aborted = true
@@ -353,29 +366,99 @@ func (w *Model) View() string {
 	if w.page == pageDone || w.aborted {
 		return ""
 	}
+	s := w.styles
+
 	if w.page == pageApply {
-		return appStyle.Render(w.spin.View() + " applying " + w.Answers.Dir)
+		var b strings.Builder
+		for _, st := range w.applied {
+			fmt.Fprintf(&b, "✓ %s (%d files)\n", st.Unit, st.Files)
+		}
+		b.WriteString(w.spin.View() + " applying " + w.Answers.Dir)
+		body := w.lg.NewStyle().Margin(1, 0).Render(b.String())
+		return w.frame(w.appBoundaryView("Odyssey Project Wizard"), body, w.appBoundaryView(""))
 	}
-	body := ""
-	if w.form != nil {
-		body = w.form.View()
-	}
+
+	v := strings.TrimSuffix(w.form.View(), "\n\n")
 	if w.page == pagePlan {
-		body = "Plan: " + w.Answers.Dir + "\n" + w.plan.Tree() + "\n" + body
+		planBox := s.Status.MarginTop(0).Width(formWidth - s.Status.GetHorizontalBorderSize()).Render(
+			s.StatusHeader.Render("Plan: "+w.Answers.Dir) + "\n" + strings.TrimRight(w.plan.Tree(), "\n"))
+		v = lipgloss.JoinVertical(lipgloss.Left, planBox, "", v)
 	}
-	if w.width >= minPanelWidth {
-		body = lipgloss.JoinHorizontal(lipgloss.Top, body, statusPanel(w.Answers))
+	form := w.lg.NewStyle().Margin(1, 0).Render(v)
+
+	body := form
+	statusMarginLeft := w.width - statusWidth - s.Status.GetHorizontalBorderSize() - lipgloss.Width(form)
+	if statusMarginLeft >= 1 {
+		status := s.Status.
+			Width(statusWidth).
+			MarginLeft(statusMarginLeft).
+			Render(statusContent(s, w.Answers))
+		body = lipgloss.JoinHorizontal(lipgloss.Left, form, status)
 	}
-	return appStyle.Render(body)
+
+	errors := w.form.Errors()
+	header := w.appBoundaryView("Odyssey Project Wizard")
+	if len(errors) > 0 {
+		header = w.appErrorBoundaryView(w.errorView())
+	}
+
+	footer := w.appBoundaryView(w.form.Help().ShortHelpView(w.form.KeyBinds()))
+	if len(errors) > 0 {
+		footer = w.appErrorBoundaryView("")
+	}
+
+	return w.frame(header, body, footer)
+}
+
+func (w *Model) frame(header, body, footer string) string {
+	content := header + "\n" + body
+	gap := 2
+	if w.height > 0 {
+		if g := w.height - w.styles.Base.GetVerticalFrameSize() - lipgloss.Height(content) - lipgloss.Height(footer) + 1; g > gap {
+			gap = g
+		}
+	}
+	return w.styles.Base.Render(content + strings.Repeat("\n", gap) + footer)
+}
+
+func (w *Model) errorView() string {
+	var s string
+	for _, err := range w.form.Errors() {
+		s += err.Error()
+	}
+	return s
+}
+
+func (w *Model) appBoundaryView(text string) string {
+	return lipgloss.PlaceHorizontal(
+		w.width,
+		lipgloss.Left,
+		w.styles.HeaderText.Render(text),
+		lipgloss.WithWhitespaceChars("/"),
+		lipgloss.WithWhitespaceForeground(indigo),
+	)
+}
+
+func (w *Model) appErrorBoundaryView(text string) string {
+	return lipgloss.PlaceHorizontal(
+		w.width,
+		lipgloss.Left,
+		w.styles.ErrorHeaderText.Render(text),
+		lipgloss.WithWhitespaceChars("/"),
+		lipgloss.WithWhitespaceForeground(red),
+	)
 }
 
 func Run(templates string, m *types.Manifest, shapes []string, a render.Answers, yes bool) (*render.Plan, error) {
 	w := New(templates, m, shapes, a, yes)
-	out, err := tea.NewProgram(w).Run()
+	out, err := tea.NewProgram(w, tea.WithAltScreen()).Run()
 	if err != nil {
 		return nil, err
 	}
 	final := out.(*Model)
+	for _, st := range final.applied {
+		fmt.Printf("✓ %s (%d files)\n", st.Unit, st.Files)
+	}
 	if final.err != nil {
 		return nil, final.err
 	}
